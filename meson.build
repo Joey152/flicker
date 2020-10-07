@@ -11,7 +11,18 @@ glfw_opt.add_cmake_defines({
 glfw_proj = cmake.subproject('glfw-3.3.2', options: glfw_opt)
 glfw_dep = glfw_proj.dependency('glfw')
 
+vulkan_dep = dependency('vulkan')
+
+inc = include_directories('include')
+
+graphics_lib = static_library('graphics', 'src/graphics/engine.c',
+    dependencies: [vulkan_dep],
+    include_directories: inc
+)
+
 executable('flicker', 'src/game/main.c',
     dependencies: [glfw_dep],
+    include_directories: inc,
+    link_with: [graphics_lib],
     link_args: ['-ldl']
 )
