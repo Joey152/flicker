@@ -1,37 +1,40 @@
 #include "graphics/engine.h"
 
-#include <assert.h>
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
 // Private Declarations
 VkInstance gfx_init_instance(void);
+VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
 
 // Global Variables
 static struct gfx_engine engine = {};
 static VkResult result = VK_SUCCESS;
 
-int gfx_init(struct gfx_engine e[static 1]) {
+int gfx_init(struct gfx_engine e[static 1], GLFWwindow *window) {
     engine.instance = gfx_init_instance();
+    engine.surface = gfx_init_surface(engine.instance, window);
     return 1;
 }
 
 VkInstance gfx_init_instance(void) {
-    char const * layers[] = {
+    char const *layers[] = {
         "VK_LAYER_KHRONOS_validation"
     };
 
     uint32_t glfw_extension_count = 0; 
-    char const ** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
+    char const **glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
 
-    char const * other_extensions[] = {
+    char const *other_extensions[] = {
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME
     };
 
     unsigned int extensions_count = glfw_extension_count + sizeof other_extensions / sizeof other_extensions[0];
-    char ** extensions = malloc(extensions_count * sizeof *extensions);
+    char **extensions = malloc(extensions_count * sizeof *extensions);
     if (!extensions) {
         // TODO: handle malloc
     }
@@ -63,5 +66,13 @@ VkInstance gfx_init_instance(void) {
     assert(result == VK_SUCCESS);
 
     return instance;
+}
+
+VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window) {
+    VkSurfaceKHR surface = 0;
+    result = glfwCreateWindowSurface(instance, window, 0, &surface);
+    assert(result == VK_SUCCESS);
+
+    return surface;
 }
 

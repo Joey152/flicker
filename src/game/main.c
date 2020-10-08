@@ -1,4 +1,5 @@
 #include <GLFW/glfw3.h>
+
 #include <stdlib.h>
 
 #include "graphics/engine.h"
@@ -15,7 +16,7 @@ int main(void) {
     }
 
     struct gfx_engine* graphics_engine = 0;
-    gfx_init(graphics_engine);
+    gfx_init(graphics_engine, window);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
