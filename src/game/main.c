@@ -15,8 +15,7 @@ int main(void) {
         goto fail_glfw_window;
     }
 
-    struct gfx_engine* graphics_engine = 0;
-    gfx_init(graphics_engine, window);
+    gfx_init(window);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();

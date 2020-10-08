@@ -1,4 +1,5 @@
 project('Flicker', 'c')
+add_project_arguments('-Dc_std=c17', language : 'c')
 
 cmake = import('cmake')
 glfw_opt = cmake.subproject_options()
