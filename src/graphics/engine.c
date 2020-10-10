@@ -36,6 +36,7 @@ VkImageView* gfx_init_swapchain_image_views(
     VkImage const *const swapchain_images,
     struct VkSurfaceFormatKHR const *const surface_format);
 VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length);
+VkDescriptorSetLayout gfx_init_descriptor_layout(VkDevice device);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -61,6 +62,8 @@ struct GfxEngine {
     VkSemaphore *is_image_available_semaphore;
     VkSemaphore *is_present_ready_semaphore;
     VkFence *is_main_render_done;
+
+    VkDescriptorSetLayout descriptor_layout;
 };
 
 // Global Variables
@@ -120,6 +123,8 @@ int gfx_init(GLFWwindow *window) {
         result = vkCreateFence(engine.device, &fence_info, 0, &engine.is_main_render_done[i]);
         assert(result == VK_SUCCESS);
     }
+
+    engine.descriptor_layout = gfx_init_descriptor_layout(engine.device);
 
     return 1;
 }
@@ -501,7 +506,30 @@ VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_im
     return pool;
 }
 
+VkDescriptorSetLayout gfx_init_descriptor_layout(VkDevice device) {
+    VkDescriptorSetLayoutBinding ubo_layout_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    };
+
+    VkDescriptorSetLayoutCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &ubo_layout_binding,
+    };
+
+    VkDescriptorSetLayout layout;
+    result = vkCreateDescriptorSetLayout(device, &create_info, 0, &layout);
+    assert(result == VK_SUCCESS);
+
+    return layout;
+}
+
+
 void gfx_deinit() {
+    vkDestroyDescriptorSetLayout(engine.device, engine.descriptor_layout, 0);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(engine.device, engine.is_image_available_semaphore[i], 0);
         vkDestroySemaphore(engine.device, engine.is_present_ready_semaphore[i], 0);
