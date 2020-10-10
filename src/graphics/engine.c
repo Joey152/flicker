@@ -32,6 +32,7 @@ VkImageView* gfx_init_swapchain_image_views(
     uint32_t length,
     VkImage const *const swapchain_images,
     struct VkSurfaceFormatKHR const *const surface_format);
+VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -52,6 +53,8 @@ struct GfxEngine {
     uint32_t swapchain_images_length;
     VkImage *swapchain_images;
     VkImageView *swapchain_image_views;
+    VkCommandPool graphics_command_pool;
+    VkDescriptorPool descriptor_pool;
 };
 
 // Global Variables
@@ -80,6 +83,16 @@ int gfx_init(GLFWwindow *window) {
         engine.swapchain_images,
         &engine.surface_format
     );
+
+    VkCommandPoolCreateInfo graphics_command_pool_info =  {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = engine.physical_device.graphics_family_index,
+    };
+    result = vkCreateCommandPool(engine.device, &graphics_command_pool_info, 0, &engine.graphics_command_pool);
+    assert(result == VK_SUCCESS);
+
+    engine.descriptor_pool = gfx_init_descriptor_pool(engine.device, engine.swapchain_images_length);
 
     return 1;
 }
@@ -439,8 +452,32 @@ VkImageView* gfx_init_swapchain_image_views(
     return swapchain_image_views;
 }
 
+VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length) {
+    VkDescriptorPoolSize descriptor_pool_sizes[] = {
+        {
+            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = swapchain_images_length,
+        }
+    };
+
+    VkDescriptorPoolCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = swapchain_images_length,
+        .poolSizeCount = sizeof descriptor_pool_sizes / sizeof descriptor_pool_sizes[0],
+        .pPoolSizes = &descriptor_pool_sizes[0],
+    };
+
+    VkDescriptorPool pool;
+    result = vkCreateDescriptorPool(device, &create_info, 0, &pool);
+    assert(result == VK_SUCCESS);
+
+    return pool;
+}
+
 
 void gfx_deinit() {
+    vkDestroyDescriptorPool(engine.device, engine.descriptor_pool, 0);
+    vkDestroyCommandPool(engine.device, engine.graphics_command_pool, 0);
     for (size_t i = 0; i < engine.swapchain_images_length; i++) {
         vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
     }
