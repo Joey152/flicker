@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// TODO: cant go over the swapchain_images_length
+#define MAX_FRAMES_IN_FLIGHT 2
+
 // Private Declarations
 VkInstance gfx_init_instance(void);
 VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
@@ -55,6 +58,9 @@ struct GfxEngine {
     VkImageView *swapchain_image_views;
     VkCommandPool graphics_command_pool;
     VkDescriptorPool descriptor_pool;
+    VkSemaphore *is_image_available_semaphore;
+    VkSemaphore *is_present_ready_semaphore;
+    VkFence *is_main_render_done;
 };
 
 // Global Variables
@@ -93,6 +99,27 @@ int gfx_init(GLFWwindow *window) {
     assert(result == VK_SUCCESS);
 
     engine.descriptor_pool = gfx_init_descriptor_pool(engine.device, engine.swapchain_images_length);
+
+    VkSemaphoreCreateInfo semaphore_info = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+
+    VkFenceCreateInfo fence_info = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+
+    engine.is_image_available_semaphore = malloc(MAX_FRAMES_IN_FLIGHT * sizeof *engine.is_image_available_semaphore);
+    engine.is_present_ready_semaphore = malloc(MAX_FRAMES_IN_FLIGHT * sizeof *engine.is_present_ready_semaphore);
+    engine.is_main_render_done = malloc(MAX_FRAMES_IN_FLIGHT * sizeof *engine.is_main_render_done);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        result = vkCreateSemaphore(engine.device, &semaphore_info, 0, &engine.is_image_available_semaphore[i]);
+        assert(result == VK_SUCCESS);
+        result = vkCreateSemaphore(engine.device, &semaphore_info, 0, &engine.is_present_ready_semaphore[i]);
+        assert(result == VK_SUCCESS);
+        result = vkCreateFence(engine.device, &fence_info, 0, &engine.is_main_render_done[i]);
+        assert(result == VK_SUCCESS);
+    }
 
     return 1;
 }
@@ -474,15 +501,18 @@ VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_im
     return pool;
 }
 
-
 void gfx_deinit() {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vkDestroySemaphore(engine.device, engine.is_image_available_semaphore[i], 0);
+        vkDestroySemaphore(engine.device, engine.is_present_ready_semaphore[i], 0);
+        vkDestroyFence(engine.device, engine.is_main_render_done[i], 0);
+    }
     vkDestroyDescriptorPool(engine.device, engine.descriptor_pool, 0);
     vkDestroyCommandPool(engine.device, engine.graphics_command_pool, 0);
     for (size_t i = 0; i < engine.swapchain_images_length; i++) {
         vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
     }
     free(engine.swapchain_image_views);
-    // TODO: do I need to free the swapchain_images?
     vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
     vkDestroyDevice(engine.device, 0);
     vkDestroySurfaceKHR(engine.instance, engine.surface, 0);
