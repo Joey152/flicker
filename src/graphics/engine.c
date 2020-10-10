@@ -38,6 +38,7 @@ VkImageView* gfx_init_swapchain_image_views(
 VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length);
 VkDescriptorSetLayout gfx_init_descriptor_layout(VkDevice device);
 VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout descriptor_layout);
+VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -66,12 +67,14 @@ struct GfxEngine {
 
     VkDescriptorSetLayout descriptor_layout;
     VkPipelineLayout pipeline_layout;
+    VkRenderPass render_pass;
 };
 
 // Global Variables
 static struct GfxEngine engine = {};
 static VkResult result = VK_SUCCESS;
 
+// Public functions
 int gfx_init(GLFWwindow *window) {
     engine.instance = gfx_init_instance();
     engine.surface = gfx_init_surface(engine.instance, window);
@@ -128,10 +131,33 @@ int gfx_init(GLFWwindow *window) {
 
     engine.descriptor_layout = gfx_init_descriptor_layout(engine.device);
     engine.pipeline_layout = gfx_init_pipeline_layout(engine.device, engine.descriptor_layout);
+    engine.render_pass = gfx_init_render_pass(engine.device, engine.surface_format.format);
 
     return 1;
 }
 
+void gfx_deinit() {
+    vkDestroyRenderPass(engine.device, engine.render_pass, 0);
+    vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, 0);
+    vkDestroyDescriptorSetLayout(engine.device, engine.descriptor_layout, 0);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vkDestroySemaphore(engine.device, engine.is_image_available_semaphore[i], 0);
+        vkDestroySemaphore(engine.device, engine.is_present_ready_semaphore[i], 0);
+        vkDestroyFence(engine.device, engine.is_main_render_done[i], 0);
+    }
+    vkDestroyDescriptorPool(engine.device, engine.descriptor_pool, 0);
+    vkDestroyCommandPool(engine.device, engine.graphics_command_pool, 0);
+    for (size_t i = 0; i < engine.swapchain_images_length; i++) {
+        vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
+    }
+    free(engine.swapchain_image_views);
+    vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
+    vkDestroyDevice(engine.device, 0);
+    vkDestroySurfaceKHR(engine.instance, engine.surface, 0);
+    vkDestroyInstance(engine.instance, 0);
+}
+
+// Private functions
 VkInstance gfx_init_instance(void) {
     VkInstance instance = 0;
 
@@ -339,7 +365,7 @@ VkSurfaceFormatKHR gfx_get_surface_format(VkPhysicalDevice physical_device, VkSu
     // TODO: how to free when returning surface_format[0] as default
     free(surface_formats);
   fail_surface_formats_alloc:
-  
+
     return default_surface_format;
 }
 
@@ -545,23 +571,58 @@ VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout
     return layout;
 }
 
+VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format) {
+    VkAttachmentDescription color_attachment_descriptions[] = {
+        {
+            .format = format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        }
+    };
 
-void gfx_deinit() {
-    vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, 0);
-    vkDestroyDescriptorSetLayout(engine.device, engine.descriptor_layout, 0);
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroySemaphore(engine.device, engine.is_image_available_semaphore[i], 0);
-        vkDestroySemaphore(engine.device, engine.is_present_ready_semaphore[i], 0);
-        vkDestroyFence(engine.device, engine.is_main_render_done[i], 0);
-    }
-    vkDestroyDescriptorPool(engine.device, engine.descriptor_pool, 0);
-    vkDestroyCommandPool(engine.device, engine.graphics_command_pool, 0);
-    for (size_t i = 0; i < engine.swapchain_images_length; i++) {
-        vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
-    }
-    free(engine.swapchain_image_views);
-    vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
-    vkDestroyDevice(engine.device, 0);
-    vkDestroySurfaceKHR(engine.instance, engine.surface, 0);
-    vkDestroyInstance(engine.instance, 0);
+    VkAttachmentReference color_attachment_refs[] = {
+        {
+            .attachment = 0,
+            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        }
+    };
+
+    VkSubpassDescription subpasses[] = {
+         {
+            .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+            .colorAttachmentCount = sizeof color_attachment_refs / sizeof color_attachment_refs[0],
+            .pColorAttachments = color_attachment_refs,
+        },
+    };
+
+    VkSubpassDependency dependency = {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dependencyFlags = 0,
+    };
+
+    VkRenderPassCreateInfo create_info =  {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = sizeof color_attachment_descriptions / sizeof color_attachment_descriptions[0],
+        .pAttachments = color_attachment_descriptions,
+        .subpassCount = sizeof subpasses / sizeof *subpasses,
+        .pSubpasses = subpasses,
+        .dependencyCount = 1,
+        .pDependencies = &dependency,
+    };
+
+    VkRenderPass render_pass;
+    result = vkCreateRenderPass(device, &create_info, 0, &render_pass);
+    assert(result == VK_SUCCESS);
+
+    return render_pass;
 }
