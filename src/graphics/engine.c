@@ -17,6 +17,12 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
 VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device);
 VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface, GLFWwindow *window);
+VkSwapchainKHR gfx_init_swapchain(
+    VkDevice device,
+    VkPhysicalDevice physical_device,
+    VkSurfaceKHR surface,
+    VkSurfaceFormatKHR surface_format,
+    VkExtent2D extent);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -33,6 +39,7 @@ struct GfxEngine {
     VkQueue graphics_queue;
     VkSurfaceFormatKHR surface_format;
     VkExtent2D extent;
+    VkSwapchainKHR swapchain;
 };
 
 // Global Variables
@@ -47,6 +54,13 @@ int gfx_init(GLFWwindow *window) {
     vkGetDeviceQueue(engine.device, engine.physical_device.graphics_family_index, 0, &engine.graphics_queue);
     engine.surface_format = gfx_init_surface_format(engine.physical_device.gpu, engine.surface);
     engine.extent = gfx_get_extent(engine.physical_device.gpu, engine.surface, window);
+    engine.swapchain = gfx_init_swapchain(
+        engine.device,
+        engine.physical_device.gpu,
+        engine.surface,
+        engine.surface_format,
+        engine.extent
+    );
 
     return 1;
 }
@@ -258,7 +272,7 @@ VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkS
 }
 
 VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface, GLFWwindow *window) {
-    VkSurfaceCapabilitiesKHR surface_capabilities = {};
+    VkSurfaceCapabilitiesKHR surface_capabilities;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
     assert(result == VK_SUCCESS);
     if (surface_capabilities.currentExtent.width != UINT32_MAX) {
@@ -288,3 +302,62 @@ VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface
         return extent;
     }
 }
+
+VkSwapchainKHR gfx_init_swapchain(
+    VkDevice device,
+    VkPhysicalDevice physical_device,
+    VkSurfaceKHR surface,
+    VkSurfaceFormatKHR surface_format,
+    VkExtent2D extent
+) {
+    VkSwapchainKHR swapchain = 0;
+
+    uint32_t present_modes_count = 0;
+    result = vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, 0);
+    assert(result == VK_SUCCESS);
+    VkPresentModeKHR *present_modes = malloc(present_modes_count * sizeof *present_modes);
+    if (!present_modes) {
+        goto fail_present_modes_alloc;
+    }
+    result = vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, present_modes);
+    assert(result == VK_SUCCESS);
+
+    VkPresentModeKHR swapchain_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    for (size_t i = 0; i < present_modes_count; i++) {
+        if (present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR || present_modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+            swapchain_present_mode = present_modes[i];
+            break;
+        }
+    }
+
+    VkSurfaceCapabilitiesKHR surface_capabilities;
+    result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
+    assert(result == VK_SUCCESS);
+
+    // TODO: supported composite alpha
+    VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    VkSwapchainCreateInfoKHR create_info = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = surface,
+        .minImageCount = surface_capabilities.minImageCount,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
+        .imageExtent = extent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .preTransform = surface_capabilities.currentTransform,
+        .compositeAlpha = composite_alpha,
+        .presentMode = swapchain_present_mode,
+        .clipped = VK_TRUE,
+    };
+
+    result = vkCreateSwapchainKHR(device, &create_info, 0, &swapchain);
+    assert(result == VK_SUCCESS);
+
+    free(present_modes);
+  fail_present_modes_alloc:
+
+    return swapchain;
+}
+
