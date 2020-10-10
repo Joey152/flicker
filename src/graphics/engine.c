@@ -12,6 +12,7 @@ VkInstance gfx_init_instance(void);
 VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
 struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurfaceKHR surface);
 VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device);
+VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -25,6 +26,8 @@ struct GfxEngine {
     VkSurfaceKHR surface;
     struct GfxPhysicalDevice physical_device;
     VkDevice device;
+    VkQueue graphics_queue;
+    VkSurfaceFormatKHR surface_format;
 };
 
 // Global Variables
@@ -36,6 +39,9 @@ int gfx_init(GLFWwindow *window) {
     engine.surface = gfx_init_surface(engine.instance, window);
     engine.physical_device = gfx_init_physical_device(engine.instance, engine.surface);
     engine.device = gfx_init_device(engine.instance, &engine.physical_device);
+    vkGetDeviceQueue(engine.device, engine.physical_device.graphics_family_index, 0, &engine.graphics_queue);
+    engine.surface_format = gfx_init_surface_format(engine.physical_device.gpu, engine.surface);
+
     return 1;
 }
 
@@ -57,7 +63,7 @@ VkInstance gfx_init_instance(void) {
     char **extensions = malloc(extensions_count * sizeof extensions);
     if (!extensions) {
         // TODO: handle malloc
-        goto fail_extensions_malloc;
+        goto fail_extensions_alloc;
     }
 
     // TODO: handle errors?
@@ -86,7 +92,7 @@ VkInstance gfx_init_instance(void) {
     assert(result == VK_SUCCESS);
 
     free(extensions);
-  fail_extensions_malloc:
+  fail_extensions_alloc:
 
     return instance;
 }
@@ -108,7 +114,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     VkPhysicalDevice *physical_devices = malloc(physical_device_count * sizeof *physical_devices);
     if (!physical_devices) {
         // TODO: handle malloc
-        goto fail_physical_devices_malloc;
+        goto fail_physical_devices_alloc;
     }
     result = vkEnumeratePhysicalDevices(instance, &physical_device_count, physical_devices);
     assert(result == VK_SUCCESS);
@@ -120,7 +126,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     uint32_t *property_counts = malloc((physical_device_count + 1) * sizeof *property_counts);
     if (!property_counts) {
         // TODO handle malloc
-        goto fail_property_counts_malloc;
+        goto fail_property_counts_alloc;
     }
 
     uint32_t total_property_count = 0;
@@ -135,7 +141,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     VkQueueFamilyProperties *queue_family_properties = malloc(total_property_count * sizeof *queue_family_properties);
     if (!queue_family_properties) {
         // TODO: handle queue_family_properties
-        goto fail_queue_family_properties_malloc;
+        goto fail_queue_family_properties_alloc;
     }
 
     for (size_t i = 0; i < physical_device_count; i++) {
@@ -164,16 +170,17 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     // how to check if physical device was found
 
     free(queue_family_properties);
-  fail_queue_family_properties_malloc:
+  fail_queue_family_properties_alloc:
     free(property_counts);
-  fail_property_counts_malloc:
+  fail_property_counts_alloc:
     free(physical_devices);
-  fail_physical_devices_malloc:
+  fail_physical_devices_alloc:
 
     return physical_device;
 }
 
 VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device) {
+    VkDevice device = 0;
 
     char const *extension_names[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -184,6 +191,9 @@ VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical
     };
 
     float *queue_priorities = calloc(physical_device->graphics_family_properties.queueCount, sizeof *queue_priorities);
+    if (!queue_priorities) {
+        goto fail_queue_prioities_alloc;
+    }
     VkDeviceQueueCreateInfo device_queue_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = physical_device->graphics_family_index,
@@ -200,10 +210,43 @@ VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical
         .pEnabledFeatures = &features,
     };
 
-    VkDevice device = 0;
     result = vkCreateDevice(physical_device->gpu, &device_info, 0, &device);
     assert(result == VK_SUCCESS);
+
+    free(queue_priorities);
+  fail_queue_prioities_alloc:
 
     return device;
 }
 
+VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
+    uint32_t surface_formats_count = 0;
+    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_formats_count, 0);
+    assert(result == VK_SUCCESS);
+    VkSurfaceFormatKHR *surface_formats = malloc(surface_formats_count * sizeof *surface_formats);
+    if (!surface_formats) {
+        goto fail_surface_formats_alloc;
+    }
+    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_formats_count, surface_formats);
+    assert(result == VK_SUCCESS);
+
+    VkSurfaceFormatKHR preferred_format = {
+        .format = VK_FORMAT_B8G8R8_UNORM,
+        .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+    };
+
+    if (surface_formats_count == 1 && surface_formats[0].format == VK_FORMAT_UNDEFINED) {
+        return preferred_format;
+    }
+
+    for (size_t i = 0; i < surface_formats_count; i++) {
+        if (surface_formats[i].format == preferred_format.format && surface_formats[i].colorSpace == preferred_format.colorSpace) {
+            return preferred_format;
+        }
+    }
+
+    // TODO: how to free when returning surface_format[0] as default
+  fail_surface_formats_alloc:
+  
+    return surface_formats[0];
+}
