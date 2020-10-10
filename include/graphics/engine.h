@@ -5,3 +5,5 @@
 
 int gfx_init(GLFWwindow *window);
 
+void gfx_deinit();
+

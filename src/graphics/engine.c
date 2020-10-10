@@ -14,15 +14,24 @@
 VkInstance gfx_init_instance(void);
 VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
 struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurfaceKHR surface);
-VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device);
-VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
-VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface, GLFWwindow *window);
+VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice const *const physical_device);
+VkSurfaceFormatKHR gfx_get_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+VkExtent2D gfx_get_extent(
+    VkPhysicalDevice physical_device,
+    VkSurfaceKHR surface,
+    GLFWwindow *window);
 VkSwapchainKHR gfx_init_swapchain(
     VkDevice device,
     VkPhysicalDevice physical_device,
     VkSurfaceKHR surface,
     VkSurfaceFormatKHR surface_format,
     VkExtent2D extent);
+VkImage* gfx_init_swapchain_images(VkDevice device, VkSwapchainKHR swapchain, uint32_t *length);
+VkImageView* gfx_init_swapchain_image_views(
+    VkDevice device,
+    uint32_t length,
+    VkImage const *const swapchain_images,
+    struct VkSurfaceFormatKHR const *const surface_format);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -40,6 +49,9 @@ struct GfxEngine {
     VkSurfaceFormatKHR surface_format;
     VkExtent2D extent;
     VkSwapchainKHR swapchain;
+    uint32_t swapchain_images_length;
+    VkImage *swapchain_images;
+    VkImageView *swapchain_image_views;
 };
 
 // Global Variables
@@ -52,7 +64,7 @@ int gfx_init(GLFWwindow *window) {
     engine.physical_device = gfx_init_physical_device(engine.instance, engine.surface);
     engine.device = gfx_init_device(engine.instance, &engine.physical_device);
     vkGetDeviceQueue(engine.device, engine.physical_device.graphics_family_index, 0, &engine.graphics_queue);
-    engine.surface_format = gfx_init_surface_format(engine.physical_device.gpu, engine.surface);
+    engine.surface_format = gfx_get_surface_format(engine.physical_device.gpu, engine.surface);
     engine.extent = gfx_get_extent(engine.physical_device.gpu, engine.surface, window);
     engine.swapchain = gfx_init_swapchain(
         engine.device,
@@ -60,6 +72,13 @@ int gfx_init(GLFWwindow *window) {
         engine.surface,
         engine.surface_format,
         engine.extent
+    );
+    engine.swapchain_images = gfx_init_swapchain_images(engine.device, engine.swapchain, &engine.swapchain_images_length);
+    engine.swapchain_image_views = gfx_init_swapchain_image_views(
+        engine.device,
+        engine.swapchain_images_length,
+        engine.swapchain_images,
+        &engine.surface_format
     );
 
     return 1;
@@ -199,7 +218,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     return physical_device;
 }
 
-VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device) {
+VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice const *const physical_device) {
     VkDevice device = 0;
 
     char const *extension_names[] = {
@@ -239,7 +258,9 @@ VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical
     return device;
 }
 
-VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
+VkSurfaceFormatKHR gfx_get_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
+    VkSurfaceFormatKHR default_surface_format = {};
+
     uint32_t surface_formats_count = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_formats_count, 0);
     assert(result == VK_SUCCESS);
@@ -249,6 +270,8 @@ VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkS
     }
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_formats_count, surface_formats);
     assert(result == VK_SUCCESS);
+
+    default_surface_format = surface_formats[0];
 
     VkSurfaceFormatKHR preferred_format = {
         .format = VK_FORMAT_B8G8R8_UNORM,
@@ -266,12 +289,17 @@ VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkS
     }
 
     // TODO: how to free when returning surface_format[0] as default
+    free(surface_formats);
   fail_surface_formats_alloc:
   
-    return surface_formats[0];
+    return default_surface_format;
 }
 
-VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface, GLFWwindow *window) {
+VkExtent2D gfx_get_extent(
+    VkPhysicalDevice physical_device,
+    VkSurfaceKHR surface,
+    GLFWwindow *window
+) {
     VkSurfaceCapabilitiesKHR surface_capabilities;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
     assert(result == VK_SUCCESS);
@@ -307,8 +335,8 @@ VkSwapchainKHR gfx_init_swapchain(
     VkDevice device,
     VkPhysicalDevice physical_device,
     VkSurfaceKHR surface,
-    VkSurfaceFormatKHR surface_format,
-    VkExtent2D extent
+    struct VkSurfaceFormatKHR surface_format,
+    struct VkExtent2D extent
 ) {
     VkSwapchainKHR swapchain = 0;
 
@@ -361,3 +389,65 @@ VkSwapchainKHR gfx_init_swapchain(
     return swapchain;
 }
 
+VkImage* gfx_init_swapchain_images(VkDevice device, VkSwapchainKHR swapchain, uint32_t *length)  {
+    result = vkGetSwapchainImagesKHR(device, swapchain, length, 0);
+    assert(result == VK_SUCCESS);
+    VkImage *swapchain_images = malloc(*length * sizeof *swapchain_images);
+    result = vkGetSwapchainImagesKHR(device, swapchain, length, swapchain_images);
+    assert(result == VK_SUCCESS);
+
+    return swapchain_images;
+}
+
+VkImageView* gfx_init_swapchain_image_views(
+    VkDevice device,
+    uint32_t length,
+    VkImage const *const swapchain_images,
+    struct VkSurfaceFormatKHR const *const surface_format
+) {
+    VkImageViewCreateInfo create_info =  {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = 0,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = surface_format->format,
+        .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .components.a = VK_COMPONENT_SWIZZLE_IDENTITY,
+        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .subresourceRange.baseMipLevel =  0,
+        .subresourceRange.levelCount = 1,
+        .subresourceRange.baseArrayLayer = 0,
+        .subresourceRange.layerCount = 1,
+    };
+
+    VkImageView *swapchain_image_views = malloc(length * sizeof *swapchain_image_views);
+    if (!swapchain_image_views) {
+        goto fail_image_views_alloc;
+    }
+    for (size_t i = 0; i < length; i++) {
+        create_info.image = swapchain_images[i];
+        VkImageView swapchain_image_view;
+        result = vkCreateImageView(device, &create_info, 0, &swapchain_image_view);
+        assert(result == VK_SUCCESS);
+
+        swapchain_image_views[i] = swapchain_image_view;
+    }
+
+  fail_image_views_alloc:
+
+    return swapchain_image_views;
+}
+
+
+void gfx_deinit() {
+    for (size_t i = 0; i < engine.swapchain_images_length; i++) {
+        vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
+    }
+    free(engine.swapchain_image_views);
+    // TODO: do I need to free the swapchain_images?
+    vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
+    vkDestroyDevice(engine.device, 0);
+    vkDestroySurfaceKHR(engine.instance, engine.surface, 0);
+    vkDestroyInstance(engine.instance, 0);
+}

@@ -21,6 +21,8 @@ int main(void) {
         glfwPollEvents();
     }
 
+    gfx_deinit();
+
     glfwDestroyWindow(window);
   fail_glfw_window:
 
