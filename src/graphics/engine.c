@@ -11,12 +11,13 @@
 VkInstance gfx_init_instance(void);
 VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
 struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurfaceKHR surface);
+VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device);
 
 // Private Structs
 struct GfxPhysicalDevice {
     VkPhysicalDevice gpu;
     uint32_t graphics_family_index; 
-    VkQueueFamilyProperties *graphics_family_properties;
+    VkQueueFamilyProperties graphics_family_properties;
 };
 
 struct GfxEngine {
@@ -34,10 +35,13 @@ int gfx_init(GLFWwindow *window) {
     engine.instance = gfx_init_instance();
     engine.surface = gfx_init_surface(engine.instance, window);
     engine.physical_device = gfx_init_physical_device(engine.instance, engine.surface);
+    engine.device = gfx_init_device(engine.instance, &engine.physical_device);
     return 1;
 }
 
 VkInstance gfx_init_instance(void) {
+    VkInstance instance = 0;
+
     char const *layers[] = {
         "VK_LAYER_KHRONOS_validation"
     };
@@ -53,6 +57,7 @@ VkInstance gfx_init_instance(void) {
     char **extensions = malloc(extensions_count * sizeof extensions);
     if (!extensions) {
         // TODO: handle malloc
+        goto fail_extensions_malloc;
     }
 
     // TODO: handle errors?
@@ -77,9 +82,11 @@ VkInstance gfx_init_instance(void) {
         .ppEnabledExtensionNames = (char const *const *)extensions,
     };
 
-    VkInstance instance = 0;
     result = vkCreateInstance(&create_info, 0, &instance);
     assert(result == VK_SUCCESS);
+
+    free(extensions);
+  fail_extensions_malloc:
 
     return instance;
 }
@@ -106,6 +113,10 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     result = vkEnumeratePhysicalDevices(instance, &physical_device_count, physical_devices);
     assert(result == VK_SUCCESS);
 
+    // TODO: abstract the sequential array allocation to different struct
+    // TODO: is the sequential array allocation faster?
+    //       - many mallocs vs pointer math to get offset
+    // TODO: storing extra property_count
     uint32_t *property_counts = malloc((physical_device_count + 1) * sizeof *property_counts);
     if (!property_counts) {
         // TODO handle malloc
@@ -117,7 +128,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     for (size_t i = 0; i < physical_device_count; i++) {
         uint32_t property_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &property_count, 0);
-        total_property_count += property_counts[i];
+        total_property_count += property_count;
         property_counts[i + 1] = total_property_count;
     }
 
@@ -128,9 +139,9 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
     }
 
     for (size_t i = 0; i < physical_device_count; i++) {
-        vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &property_counts[i], &queue_family_properties[property_counts[i]]);
+        vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &property_counts[i + 1], &queue_family_properties[property_counts[i]]);
 
-        for (size_t j = 0; j < property_counts[i]; j++) {
+        for (size_t j = 0; j < property_counts[i + 1]; j++) {
             if (queue_family_properties[property_counts[i] + j].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 VkBool32 is_surface_supported = VK_FALSE;
                 result = vkGetPhysicalDeviceSurfaceSupportKHR(physical_devices[i], j, surface, &is_surface_supported);
@@ -142,7 +153,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
                     memcpy(
                         &physical_device.graphics_family_properties,
                         &queue_family_properties[property_counts[i] + j],
-                        property_counts[i] * sizeof *queue_family_properties
+                        sizeof *queue_family_properties
                     );
                     goto break_physical_device_found;
                 }
@@ -150,6 +161,7 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
         }
     }
   break_physical_device_found:
+    // how to check if physical device was found
 
     free(queue_family_properties);
   fail_queue_family_properties_malloc:
@@ -160,3 +172,38 @@ struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurface
 
     return physical_device;
 }
+
+VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device) {
+
+    char const *extension_names[] = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
+
+    VkPhysicalDeviceFeatures features =  {
+        .logicOp = VK_TRUE,
+    };
+
+    float *queue_priorities = calloc(physical_device->graphics_family_properties.queueCount, sizeof *queue_priorities);
+    VkDeviceQueueCreateInfo device_queue_info = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = physical_device->graphics_family_index,
+        .queueCount = physical_device->graphics_family_properties.queueCount,
+        .pQueuePriorities = queue_priorities,
+    };
+
+    VkDeviceCreateInfo device_info = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &device_queue_info,
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames = extension_names,
+        .pEnabledFeatures = &features,
+    };
+
+    VkDevice device = 0;
+    result = vkCreateDevice(physical_device->gpu, &device_info, 0, &device);
+    assert(result == VK_SUCCESS);
+
+    return device;
+}
+
