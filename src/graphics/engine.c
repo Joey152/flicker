@@ -4,6 +4,9 @@
 #include <GLFW/glfw3.h>
 
 #include <assert.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +16,7 @@ VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
 struct GfxPhysicalDevice gfx_init_physical_device(VkInstance instance, VkSurfaceKHR surface);
 VkDevice gfx_init_device(VkInstance instance, struct GfxPhysicalDevice *physical_device);
 VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface, GLFWwindow *window);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -28,6 +32,7 @@ struct GfxEngine {
     VkDevice device;
     VkQueue graphics_queue;
     VkSurfaceFormatKHR surface_format;
+    VkExtent2D extent;
 };
 
 // Global Variables
@@ -41,6 +46,7 @@ int gfx_init(GLFWwindow *window) {
     engine.device = gfx_init_device(engine.instance, &engine.physical_device);
     vkGetDeviceQueue(engine.device, engine.physical_device.graphics_family_index, 0, &engine.graphics_queue);
     engine.surface_format = gfx_init_surface_format(engine.physical_device.gpu, engine.surface);
+    engine.extent = gfx_get_extent(engine.physical_device.gpu, engine.surface, window);
 
     return 1;
 }
@@ -249,4 +255,36 @@ VkSurfaceFormatKHR gfx_init_surface_format(VkPhysicalDevice physical_device, VkS
   fail_surface_formats_alloc:
   
     return surface_formats[0];
+}
+
+VkExtent2D gfx_get_extent(VkPhysicalDevice physical_device, VkSurfaceKHR surface, GLFWwindow *window) {
+    VkSurfaceCapabilitiesKHR surface_capabilities = {};
+    result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
+    assert(result == VK_SUCCESS);
+    if (surface_capabilities.currentExtent.width != UINT32_MAX) {
+        return surface_capabilities.currentExtent;
+    } else {
+        int width = 0;
+        int height = 0;
+        glfwGetFramebufferSize(window, &width, &height);
+
+        if (width < surface_capabilities.minImageExtent.width) {
+            width = surface_capabilities.minImageExtent.width;
+        } else if (width > surface_capabilities.maxImageExtent.width) {
+            width = surface_capabilities.maxImageExtent.width;
+        }
+
+        if (height < surface_capabilities.minImageExtent.height) {
+            height = surface_capabilities.minImageExtent.height;
+        } else if (height > surface_capabilities.maxImageExtent.height) {
+            height = surface_capabilities.maxImageExtent.height;
+        }
+
+        VkExtent2D extent = {
+            .width = width,
+            .height = height,
+        };
+
+        return extent;
+    }
 }
