@@ -37,6 +37,7 @@ VkImageView* gfx_init_swapchain_image_views(
     struct VkSurfaceFormatKHR const *const surface_format);
 VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length);
 VkDescriptorSetLayout gfx_init_descriptor_layout(VkDevice device);
+VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout descriptor_layout);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -64,6 +65,7 @@ struct GfxEngine {
     VkFence *is_main_render_done;
 
     VkDescriptorSetLayout descriptor_layout;
+    VkPipelineLayout pipeline_layout;
 };
 
 // Global Variables
@@ -125,6 +127,7 @@ int gfx_init(GLFWwindow *window) {
     }
 
     engine.descriptor_layout = gfx_init_descriptor_layout(engine.device);
+    engine.pipeline_layout = gfx_init_pipeline_layout(engine.device, engine.descriptor_layout);
 
     return 1;
 }
@@ -527,8 +530,24 @@ VkDescriptorSetLayout gfx_init_descriptor_layout(VkDevice device) {
     return layout;
 }
 
+VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout descriptor_layout) {
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &descriptor_layout,
+        .pushConstantRangeCount = 0,
+    };
+
+    VkPipelineLayout layout;
+    result = vkCreatePipelineLayout(device, &pipeline_layout_create_info, 0, &layout);
+    assert(result == VK_SUCCESS);
+
+    return layout;
+}
+
 
 void gfx_deinit() {
+    vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, 0);
     vkDestroyDescriptorSetLayout(engine.device, engine.descriptor_layout, 0);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(engine.device, engine.is_image_available_semaphore[i], 0);
