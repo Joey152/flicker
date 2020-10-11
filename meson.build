@@ -16,7 +16,12 @@ vulkan_dep = dependency('vulkan')
 
 inc = include_directories('include')
 
-graphics_lib = static_library('graphics', 'src/graphics/engine.c',
+graphics_lib = static_library('graphics', 
+    [
+        'src/graphics/engine.c',
+        'src/graphics/resource.c',
+        'src/graphics/vertex.c',
+    ],
     dependencies: [vulkan_dep],
     include_directories: inc
 )

@@ -10,8 +10,32 @@
 #include <stdlib.h>
 #include <string.h>
 
-// TODO: cant go over the swapchain_images_length
+#include "graphics/vertex.h"
+#include "graphics/resource.h"
+
+// TODO: cant go over the swapchain_length
 #define MAX_FRAMES_IN_FLIGHT 2
+
+// TODO move
+static struct Vertex vertex_pos[] = {
+    {
+        .pos = { .x = 0.0, .y = 1.0, .z = 1.0 },
+        .clr = { .r = 1.0, .g = 0.0, .b = 0.0 },
+    },
+    {
+        .pos = { .x = 1.0, .y = 0.0, .z = 1.0 },
+        .clr = { .r = 0.0, .g = 1.0, .b = 0.0 },
+    },
+    {
+        .pos = { .x = -1.0, .y = 0.0, .z = 1.0 },
+        .clr = { .r = 0.0, .g = 0.0, .b = 1.0 },
+    },
+};
+
+static struct UBO {
+    float view[4][4];
+    float proj[4][4];
+} ubo;
 
 // Private Declarations
 VkInstance gfx_init_instance(void);
@@ -35,10 +59,12 @@ VkImageView* gfx_init_swapchain_image_views(
     uint32_t length,
     VkImage const *const swapchain_images,
     struct VkSurfaceFormatKHR const *const surface_format);
-VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length);
+VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_length);
 VkDescriptorSetLayout gfx_init_descriptor_layout(VkDevice device);
 VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout descriptor_layout);
 VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format);
+struct GfxResource gfx_init_vertices_resource(VkDevice device, VkPhysicalDevice physical_device, uint32_t length);
+struct GfxResource* gfx_init_uniform_resources(VkDevice device, VkPhysicalDevice physical_device, uint32_t length);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -54,9 +80,9 @@ struct GfxEngine {
     VkDevice device;
     VkQueue graphics_queue;
     VkSurfaceFormatKHR surface_format;
-    VkExtent2D extent;
+    struct VkExtent2D extent;
     VkSwapchainKHR swapchain;
-    uint32_t swapchain_images_length;
+    uint32_t swapchain_length;
     VkImage *swapchain_images;
     VkImageView *swapchain_image_views;
     VkCommandPool graphics_command_pool;
@@ -68,6 +94,8 @@ struct GfxEngine {
     VkDescriptorSetLayout descriptor_layout;
     VkPipelineLayout pipeline_layout;
     VkRenderPass render_pass;
+    struct GfxResource vertices_resource;
+    struct GfxResource *uniform_resources;
 };
 
 // Global Variables
@@ -90,10 +118,10 @@ int gfx_init(GLFWwindow *window) {
         engine.surface_format,
         engine.extent
     );
-    engine.swapchain_images = gfx_init_swapchain_images(engine.device, engine.swapchain, &engine.swapchain_images_length);
+    engine.swapchain_images = gfx_init_swapchain_images(engine.device, engine.swapchain, &engine.swapchain_length);
     engine.swapchain_image_views = gfx_init_swapchain_image_views(
         engine.device,
-        engine.swapchain_images_length,
+        engine.swapchain_length,
         engine.swapchain_images,
         &engine.surface_format
     );
@@ -106,7 +134,7 @@ int gfx_init(GLFWwindow *window) {
     result = vkCreateCommandPool(engine.device, &graphics_command_pool_info, 0, &engine.graphics_command_pool);
     assert(result == VK_SUCCESS);
 
-    engine.descriptor_pool = gfx_init_descriptor_pool(engine.device, engine.swapchain_images_length);
+    engine.descriptor_pool = gfx_init_descriptor_pool(engine.device, engine.swapchain_length);
 
     VkSemaphoreCreateInfo semaphore_info = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -132,11 +160,24 @@ int gfx_init(GLFWwindow *window) {
     engine.descriptor_layout = gfx_init_descriptor_layout(engine.device);
     engine.pipeline_layout = gfx_init_pipeline_layout(engine.device, engine.descriptor_layout);
     engine.render_pass = gfx_init_render_pass(engine.device, engine.surface_format.format);
+    engine.vertices_resource = gfx_init_vertices_resource(engine.device, engine.physical_device.gpu, sizeof vertex_pos);
+
+    // TODO: move to game/main
+    void *data = malloc(sizeof vertex_pos);
+    vkMapMemory(engine.device, engine.vertices_resource.memory, 0, sizeof vertex_pos, 0, data);
+    memcpy(data, &vertex_pos, sizeof vertex_pos); 
+    vkUnmapMemory(engine.device, engine.vertices_resource.memory);
+
+    engine.uniform_resources = gfx_init_uniform_resources(engine.device, engine.physical_device.gpu, engine.swapchain_length);
 
     return 1;
 }
 
 void gfx_deinit() {
+    for (size_t i = 0; i < engine.swapchain_length; i++) {
+        gfx_destroy_resource(engine.device, &engine.uniform_resources[i], 0);
+    }
+    gfx_destroy_resource(engine.device, &engine.vertices_resource, 0);
     vkDestroyRenderPass(engine.device, engine.render_pass, 0);
     vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, 0);
     vkDestroyDescriptorSetLayout(engine.device, engine.descriptor_layout, 0);
@@ -147,7 +188,7 @@ void gfx_deinit() {
     }
     vkDestroyDescriptorPool(engine.device, engine.descriptor_pool, 0);
     vkDestroyCommandPool(engine.device, engine.graphics_command_pool, 0);
-    for (size_t i = 0; i < engine.swapchain_images_length; i++) {
+    for (size_t i = 0; i < engine.swapchain_length; i++) {
         vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
     }
     free(engine.swapchain_image_views);
@@ -513,17 +554,17 @@ VkImageView* gfx_init_swapchain_image_views(
     return swapchain_image_views;
 }
 
-VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_images_length) {
+VkDescriptorPool gfx_init_descriptor_pool(VkDevice device, uint32_t swapchain_length) {
     VkDescriptorPoolSize descriptor_pool_sizes[] = {
         {
             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = swapchain_images_length,
+            .descriptorCount = swapchain_length,
         }
     };
 
     VkDescriptorPoolCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = swapchain_images_length,
+        .maxSets = swapchain_length,
         .poolSizeCount = sizeof descriptor_pool_sizes / sizeof descriptor_pool_sizes[0],
         .pPoolSizes = &descriptor_pool_sizes[0],
     };
@@ -625,4 +666,71 @@ VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format) {
     assert(result == VK_SUCCESS);
 
     return render_pass;
+}
+
+struct GfxResource gfx_init_vertices_resource(VkDevice device, VkPhysicalDevice physical_device, uint32_t size) {
+    struct GfxResource resource = {};
+
+    struct VkBufferCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+
+    result = vkCreateBuffer(device, &create_info, 0, &resource.buffer);
+    assert(result == VK_SUCCESS);
+
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(device, resource.buffer, &memory_requirements);
+    VkMemoryAllocateInfo alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memory_requirements.size,
+        .memoryTypeIndex = gfx_get_memory_type(
+            physical_device,
+            memory_requirements.memoryTypeBits, 
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        ),
+    };
+
+    result = vkAllocateMemory(device, &alloc_info, 0, &resource.memory);
+    assert(result == VK_SUCCESS);
+
+    vkBindBufferMemory(device, resource.buffer, resource.memory, 0);
+
+    return resource;
+}
+
+struct GfxResource* gfx_init_uniform_resources(VkDevice device, VkPhysicalDevice physical_device, uint32_t length) {
+    struct GfxResource *resources = malloc(length * sizeof *resources);
+    for (size_t i = 0; i < length; i++) {
+        VkBufferCreateInfo create_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = sizeof (struct UBO),
+            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        };
+
+        result = vkCreateBuffer(device, &create_info, 0, &resources[i].buffer);
+        assert(result == VK_SUCCESS);
+
+        VkMemoryRequirements memory_requirements;
+        vkGetBufferMemoryRequirements(device, resources[i].buffer, &memory_requirements);
+        VkMemoryAllocateInfo buffer_alloc_info = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = memory_requirements.size,
+            .memoryTypeIndex = gfx_get_memory_type(
+                physical_device,
+                memory_requirements.memoryTypeBits, 
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+            ),
+        };
+
+        result = vkAllocateMemory(device, &buffer_alloc_info, 0, &resources[i].memory);
+        assert(result == VK_SUCCESS);
+
+        vkBindBufferMemory(device, resources[i].buffer, resources[i].memory, 0);
+    }
+
+    return resources;
 }
