@@ -65,6 +65,12 @@ VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout
 VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format);
 struct GfxResource gfx_init_vertices_resource(VkDevice device, VkPhysicalDevice physical_device, uint32_t length);
 struct GfxResource* gfx_init_uniform_resources(VkDevice device, VkPhysicalDevice physical_device, uint32_t length);
+VkDescriptorSet* gfx_init_descriptor_sets(
+    VkDevice device,
+    uint32_t length,
+    VkDescriptorSetLayout descriptor_layout,
+    VkDescriptorPool descriptor_pool,
+    struct GfxResource *uniform_resources);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -96,6 +102,7 @@ struct GfxEngine {
     VkRenderPass render_pass;
     struct GfxResource vertices_resource;
     struct GfxResource *uniform_resources;
+    VkDescriptorSet *descriptor_sets;
 };
 
 // Global Variables
@@ -169,6 +176,13 @@ int gfx_init(GLFWwindow *window) {
     vkUnmapMemory(engine.device, engine.vertices_resource.memory);
 
     engine.uniform_resources = gfx_init_uniform_resources(engine.device, engine.physical_device.gpu, engine.swapchain_length);
+    engine.descriptor_sets = gfx_init_descriptor_sets(
+        engine.device,
+        engine.swapchain_length,
+        engine.descriptor_layout,
+        engine.descriptor_pool,
+        engine.uniform_resources
+    );
 
     return 1;
 }
@@ -733,4 +747,56 @@ struct GfxResource* gfx_init_uniform_resources(VkDevice device, VkPhysicalDevice
     }
 
     return resources;
+}
+
+VkDescriptorSet* gfx_init_descriptor_sets(
+    VkDevice device,
+    uint32_t length,
+    VkDescriptorSetLayout descriptor_layout,
+    VkDescriptorPool descriptor_pool,
+    struct GfxResource *uniform_resources
+) {
+    VkDescriptorSet *descriptor_sets = malloc(length * sizeof *descriptor_sets);
+    VkDescriptorSetLayout *layouts = malloc(length * sizeof *layouts);
+    if (!layouts) {
+        goto fail_layouts_alloc;
+    }
+    for (size_t i = 0; i < length; i++) {
+        layouts[i] = descriptor_layout;
+    }
+
+    VkDescriptorSetAllocateInfo descriptor_alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = length,
+        .pSetLayouts = layouts,
+    };
+
+    result = vkAllocateDescriptorSets(device, &descriptor_alloc_info, descriptor_sets);
+    assert(result == VK_SUCCESS);
+
+    for (size_t i = 0; i < length; i++) {
+        VkDescriptorBufferInfo buffer_info = {
+            .buffer = uniform_resources[i].buffer,
+            .offset = 0,
+            .range = VK_WHOLE_SIZE,
+        };
+
+        VkWriteDescriptorSet descriptor_write = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptor_sets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &buffer_info,
+        };
+
+        vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, 0);
+    }
+
+    free(layouts);
+  fail_layouts_alloc:
+
+    return descriptor_sets;
 }
