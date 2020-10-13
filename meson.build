@@ -19,6 +19,7 @@ inc = include_directories('include')
 graphics_lib = static_library('graphics', 
     [
         'src/graphics/engine.c',
+        'src/graphics/io.c',
         'src/graphics/resource.c',
         'src/graphics/vertex.c',
     ],

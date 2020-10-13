@@ -10,8 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "graphics/vertex.h"
+#include "graphics/io.h"
 #include "graphics/resource.h"
+#include "graphics/vertex.h"
 
 // TODO: cant go over the swapchain_length
 #define MAX_FRAMES_IN_FLIGHT 2
@@ -20,15 +21,15 @@
 static struct Vertex vertex_pos[] = {
     {
         .pos = { .x = 0.0, .y = 1.0, .z = 1.0 },
-        .clr = { .r = 1.0, .g = 0.0, .b = 0.0 },
+        .color = { .r = 1.0, .g = 0.0, .b = 0.0 },
     },
     {
         .pos = { .x = 1.0, .y = 0.0, .z = 1.0 },
-        .clr = { .r = 0.0, .g = 1.0, .b = 0.0 },
+        .color = { .r = 0.0, .g = 1.0, .b = 0.0 },
     },
     {
         .pos = { .x = -1.0, .y = 0.0, .z = 1.0 },
-        .clr = { .r = 0.0, .g = 0.0, .b = 1.0 },
+        .color = { .r = 0.0, .g = 0.0, .b = 1.0 },
     },
 };
 
@@ -71,6 +72,12 @@ VkDescriptorSet* gfx_init_descriptor_sets(
     VkDescriptorSetLayout descriptor_layout,
     VkDescriptorPool descriptor_pool,
     struct GfxResource *uniform_resources);
+VkPipeline gfx_init_pipeline(
+    VkDevice device,
+    struct VkExtent2D extent,
+    VkPipelineLayout pipeline_layout,
+    VkRenderPass render_pass);
+VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, char const *code);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -800,3 +807,192 @@ VkDescriptorSet* gfx_init_descriptor_sets(
 
     return descriptor_sets;
 }
+
+VkPipeline gfx_init_pipeline(
+    VkDevice device,
+    struct VkExtent2D extent,
+    VkPipelineLayout pipeline_layout,
+    VkRenderPass render_pass
+) {
+    // TODO change cwd() to install path
+    uint32_t vert_shader_code_size = 0; 
+    char *vert_shader_code = 0;
+    gfx_io_read_spirv("asset/shader/main/vert.spv", &vert_shader_code_size, vert_shader_code);
+    uint32_t frag_shader_code_size = 0; 
+    char *frag_shader_code = 0;
+    gfx_io_read_spirv("asset/shader/main/frag.spv", &frag_shader_code_size, frag_shader_code);
+
+    VkShaderModule vert_shader_module = gfx_init_shader_module(device, vert_shader_code_size, vert_shader_code);
+    VkShaderModule frag_shader_module = gfx_init_shader_module(device, frag_shader_code_size, frag_shader_code);
+
+    VkPipelineShaderStageCreateInfo vert_shader_stage_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vert_shader_module,
+        .pName = "main",
+    };
+
+    VkPipelineShaderStageCreateInfo frag_shader_stage_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = frag_shader_module,
+        .pName = "main",
+    };
+
+    VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
+
+    VkVertexInputBindingDescription binding_description = {
+        .binding = 0,
+        .stride = sizeof(struct Vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+
+    VkVertexInputAttributeDescription attribute_descriptions[] = {
+         {
+            .binding = 0,
+            .location = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(struct Vertex, pos),
+        },
+        {
+            .binding = 0,
+            .location = 1,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(struct Vertex, color),
+        },
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding_description,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = &attribute_descriptions[0],
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE,
+    };
+
+    VkViewport viewports[] = {
+        {
+            .x = 0.0,
+            .y = 0.0,
+            .width = extent.width,
+            .height = extent.height,
+            .minDepth = 0.0,
+            .maxDepth = 1.0,
+        },
+    };
+    
+    VkRect2D scissors[] = {
+        {
+            .offset.x = 0.0,
+            .offset.y = 0.0,
+            .extent = extent,
+        },
+    };
+
+    VkPipelineViewportStateCreateInfo viewport = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = sizeof viewports / sizeof viewports[0],
+        .pViewports = &viewports[0],
+        .scissorCount = sizeof scissors / sizeof scissors[0],
+        .pScissors = &scissors[0],
+    };
+
+    VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .depthBiasEnable = VK_FALSE,
+        .depthBiasConstantFactor = 0.0,
+        .depthBiasClamp = 0.0,
+        .depthBiasSlopeFactor = 0.0,
+        .lineWidth = 1.0,
+    };
+
+    VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable = VK_FALSE,
+        .minSampleShading = 0.0,
+        .pSampleMask = 0,
+        .alphaToCoverageEnable = VK_FALSE,
+        .alphaToOneEnable = VK_FALSE,
+    };
+    
+    // TODO: depth
+    
+    VkPipelineColorBlendAttachmentState color_blend_attachments[] = {
+         {
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+            .blendEnable = VK_FALSE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+        },
+    };
+
+    VkPipelineColorBlendStateCreateInfo color_blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = VK_FALSE,
+        .logicOp = VK_LOGIC_OP_COPY,
+        .attachmentCount = sizeof color_blend_attachments / sizeof color_blend_attachments[0],
+        .pAttachments = &color_blend_attachments[0],
+        .blendConstants = { 0.0, 0.0, 0.0, 0.0 },
+    };
+
+    // TODO: dynamic state
+
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = sizeof shader_stages / sizeof shader_stages[0],
+        .pStages = &shader_stages[0],
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pTessellationState = 0,
+        .pViewportState = &viewport,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pDepthStencilState = 0,
+        .pColorBlendState = &color_blend,
+        .pDynamicState = 0,
+        .layout = pipeline_layout,
+        .renderPass = render_pass,
+        .subpass = 0,
+        .basePipelineHandle = 0,
+        .basePipelineIndex = -1,
+    };
+
+
+    VkPipeline pipeline;    
+    result = vkCreateGraphicsPipelines(device, 0, 1, &graphics_pipeline_create_info, 0, &pipeline);
+    assert(result == VK_SUCCESS);
+
+    return pipeline;
+}
+
+VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, char const *code) {
+    VkShaderModuleCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = size,
+        .pCode = (uint32_t *)code,
+    };
+    
+    VkShaderModule shader_module;
+    result = vkCreateShaderModule(device, &create_info, 0, &shader_module);
+    assert(result == VK_SUCCESS);
+
+    return shader_module;
+}
+
