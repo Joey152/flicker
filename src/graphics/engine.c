@@ -77,7 +77,7 @@ VkPipeline gfx_init_pipeline(
     struct VkExtent2D extent,
     VkPipelineLayout pipeline_layout,
     VkRenderPass render_pass);
-VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, char const *code);
+VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, uint32_t const *code);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -110,6 +110,7 @@ struct GfxEngine {
     struct GfxResource vertices_resource;
     struct GfxResource *uniform_resources;
     VkDescriptorSet *descriptor_sets;
+    VkPipeline pipeline;
 };
 
 // Global Variables
@@ -190,11 +191,18 @@ int gfx_init(GLFWwindow *window) {
         engine.descriptor_pool,
         engine.uniform_resources
     );
+    engine.pipeline = gfx_init_pipeline( 
+        engine.device,
+        engine.extent,
+        engine.pipeline_layout,
+        engine.render_pass
+    );
 
     return 1;
 }
 
 void gfx_deinit() {
+    vkDestroyPipeline(engine.device, engine.pipeline, 0);
     for (size_t i = 0; i < engine.swapchain_length; i++) {
         gfx_destroy_resource(engine.device, &engine.uniform_resources[i], 0);
     }
@@ -816,12 +824,11 @@ VkPipeline gfx_init_pipeline(
 ) {
     // TODO change cwd() to install path
     uint32_t vert_shader_code_size = 0; 
-    char *vert_shader_code = 0;
-    gfx_io_read_spirv("asset/shader/main/vert.spv", &vert_shader_code_size, vert_shader_code);
+    uint32_t *vert_shader_code = 0;
+    gfx_io_read_spirv("build-debug/shader.vert.spv", &vert_shader_code_size, &vert_shader_code);
     uint32_t frag_shader_code_size = 0; 
-    char *frag_shader_code = 0;
-    gfx_io_read_spirv("asset/shader/main/frag.spv", &frag_shader_code_size, frag_shader_code);
-
+    uint32_t *frag_shader_code = 0;
+    gfx_io_read_spirv("build-debug/shader.frag.spv", &frag_shader_code_size, &frag_shader_code);
     VkShaderModule vert_shader_module = gfx_init_shader_module(device, vert_shader_code_size, vert_shader_code);
     VkShaderModule frag_shader_module = gfx_init_shader_module(device, frag_shader_code_size, frag_shader_code);
 
@@ -979,14 +986,19 @@ VkPipeline gfx_init_pipeline(
     result = vkCreateGraphicsPipelines(device, 0, 1, &graphics_pipeline_create_info, 0, &pipeline);
     assert(result == VK_SUCCESS);
 
+    free(vert_shader_code);
+    free(frag_shader_code);
+    vkDestroyShaderModule(device, vert_shader_module, 0);
+    vkDestroyShaderModule(device, frag_shader_module, 0);
+
     return pipeline;
 }
 
-VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, char const *code) {
+VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, uint32_t const *code) {
     VkShaderModuleCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = size,
-        .pCode = (uint32_t *)code,
+        .pCode = code,
     };
     
     VkShaderModule shader_module;

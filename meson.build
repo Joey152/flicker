@@ -1,6 +1,21 @@
 project('Flicker', 'c')
 add_project_arguments('-Dc_std=c17', language : 'c')
 
+glslc = find_program('glslc')
+custom_target('compile main shaders',
+    install: true,
+    install_dir: 'asset/shader/main',
+    input: files(
+        'asset/shader/main/shader.vert',
+        'asset/shader/main/shader.frag',
+    ),
+    output: [
+        'vert.spv',
+        'frag.spv',
+    ],
+    command: [glslc, '-c', '@INPUT@']
+)
+
 cmake = import('cmake')
 glfw_opt = cmake.subproject_options()
 glfw_opt.append_compile_args('c', '-w')
