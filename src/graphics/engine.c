@@ -78,6 +78,12 @@ VkPipeline gfx_init_pipeline(
     VkPipelineLayout pipeline_layout,
     VkRenderPass render_pass);
 VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, uint32_t const *code);
+VkFramebuffer* gfx_init_framebuffers(
+    VkDevice device,
+    uint32_t image_view_length,
+    VkImageView *image_views,
+    VkRenderPass render_pass,
+    VkExtent2D extent);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -111,6 +117,7 @@ struct GfxEngine {
     struct GfxResource *uniform_resources;
     VkDescriptorSet *descriptor_sets;
     VkPipeline pipeline;
+    VkFramebuffer *framebuffers;
 };
 
 // Global Variables
@@ -197,11 +204,22 @@ int gfx_init(GLFWwindow *window) {
         engine.pipeline_layout,
         engine.render_pass
     );
+    engine.framebuffers = gfx_init_framebuffers(
+        engine.device,
+        engine.swapchain_length,
+        engine.swapchain_image_views,
+        engine.render_pass,
+        engine.extent
+    );
 
     return 1;
 }
 
 void gfx_deinit() {
+    for (size_t i = 0; i < engine.swapchain_length; i++) {
+        vkDestroyFramebuffer(engine.device, engine.framebuffers[i], 0);
+    }
+    free(engine.framebuffers);
     vkDestroyPipeline(engine.device, engine.pipeline, 0);
     for (size_t i = 0; i < engine.swapchain_length; i++) {
         gfx_destroy_resource(engine.device, &engine.uniform_resources[i], 0);
@@ -1008,3 +1026,35 @@ VkShaderModule gfx_init_shader_module(VkDevice device, uint32_t size, uint32_t c
     return shader_module;
 }
 
+VkFramebuffer* gfx_init_framebuffers(
+    VkDevice device,
+    uint32_t image_view_length,
+    VkImageView *image_views,
+    VkRenderPass render_pass,
+    VkExtent2D extent
+) {
+    VkFramebuffer *framebuffers = malloc(sizeof *framebuffers * image_view_length);
+
+    VkFramebufferCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = render_pass,
+        .width = extent.width,
+        .height = extent.height,
+        .layers = 1,
+    };
+    
+    for (size_t i = 0; i < image_view_length; i++) {
+        printf("fdsajkl\n");
+        VkImageView attachments[1] = {
+            image_views[i]
+        };
+
+        create_info.attachmentCount = sizeof attachments / sizeof attachments[0];
+        create_info.pAttachments = attachments;
+
+        result = vkCreateFramebuffer(device, &create_info, 0, &framebuffers[i]);
+        assert(result == VK_SUCCESS);
+    }
+
+    return framebuffers;
+}
