@@ -84,6 +84,10 @@ VkFramebuffer* gfx_init_framebuffers(
     VkImageView *image_views,
     VkRenderPass render_pass,
     VkExtent2D extent);
+VkCommandBuffer* gfx_init_command_buffers(
+    VkDevice device,
+    uint32_t length,
+    VkCommandPool command_pool);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -118,6 +122,7 @@ struct GfxEngine {
     VkDescriptorSet *descriptor_sets;
     VkPipeline pipeline;
     VkFramebuffer *framebuffers;
+    VkCommandBuffer *command_buffers;
 };
 
 // Global Variables
@@ -210,6 +215,11 @@ int gfx_init(GLFWwindow *window) {
         engine.swapchain_image_views,
         engine.render_pass,
         engine.extent
+    );
+    engine.command_buffers = gfx_init_command_buffers(
+        engine.device,
+        engine.swapchain_length,
+        engine.graphics_command_pool
     );
 
     return 1;
@@ -1044,7 +1054,6 @@ VkFramebuffer* gfx_init_framebuffers(
     };
     
     for (size_t i = 0; i < image_view_length; i++) {
-        printf("fdsajkl\n");
         VkImageView attachments[1] = {
             image_views[i]
         };
@@ -1058,3 +1067,22 @@ VkFramebuffer* gfx_init_framebuffers(
 
     return framebuffers;
 }
+
+VkCommandBuffer* gfx_init_command_buffers(
+    VkDevice device,
+    uint32_t length,
+    VkCommandPool command_pool
+) {
+    VkCommandBuffer *command_buffers = malloc(sizeof *command_buffers * length);
+    VkCommandBufferAllocateInfo command_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = length,
+    };
+    result = vkAllocateCommandBuffers(device, &command_buffer_info, command_buffers);
+    assert(result == VK_SUCCESS);
+
+    return command_buffers;
+}
+
