@@ -88,6 +88,16 @@ VkCommandBuffer* gfx_init_command_buffers(
     VkDevice device,
     uint32_t length,
     VkCommandPool command_pool);
+void record_command_buffers(
+    uint32_t length,
+    VkCommandBuffer *command_buffers,
+    VkRenderPass render_pass,
+    VkFramebuffer *framebuffers,
+    VkPipeline pipeline,
+    VkPipelineLayout pipeline_layout,
+    VkBuffer vertex_buffer,
+    VkDescriptorSet *descriptor_sets,
+    VkExtent2D extent);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -220,6 +230,17 @@ int gfx_init(GLFWwindow *window) {
         engine.device,
         engine.swapchain_length,
         engine.graphics_command_pool
+    );
+    record_command_buffers(
+        engine.swapchain_length,
+        engine.command_buffers,
+        engine.render_pass,
+        engine.framebuffers,
+        engine.pipeline,
+        engine.pipeline_layout,
+        engine.vertices_resource.buffer,
+        engine.descriptor_sets,
+        engine.extent
     );
 
     return 1;
@@ -1084,5 +1105,56 @@ VkCommandBuffer* gfx_init_command_buffers(
     assert(result == VK_SUCCESS);
 
     return command_buffers;
+}
+
+void record_command_buffers(
+    uint32_t length,
+    VkCommandBuffer *command_buffers,
+    VkRenderPass render_pass,
+    VkFramebuffer *framebuffers,
+    VkPipeline pipeline,
+    VkPipelineLayout pipeline_layout,
+    VkBuffer vertex_buffer,
+    VkDescriptorSet *descriptor_sets,
+    VkExtent2D extent
+) {
+    VkCommandBufferBeginInfo begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+    
+    VkClearValue clear_color = {
+        .color = {
+            .float32 = {0.0f, 0.0f, 0.0f, 1.0f}
+        }
+    };
+
+    for (size_t i = 0; i < length; i++) {
+        result = vkBeginCommandBuffer(command_buffers[i], &begin_info);
+        assert(result == VK_SUCCESS);
+
+        VkRenderPassBeginInfo render_pass_begin_info = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = render_pass,
+            .framebuffer = framebuffers[i],
+            .renderArea = {
+                .offset = { 0.0f, 0.0f },
+                .extent = extent,
+            },
+            .clearValueCount = 1,
+            .pClearValues = &clear_color,
+        };
+
+        VkDeviceSize device_size = 0.0f;
+        
+        vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, &device_size);
+        vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);    
+        vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
+        vkCmdEndRenderPass(command_buffers[i]);
+
+        result = vkEndCommandBuffer(command_buffers[i]);
+        assert(result == VK_SUCCESS);
+    }   
 }
 
