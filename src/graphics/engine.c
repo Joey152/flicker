@@ -33,11 +33,6 @@ static struct Vertex vertex_pos[] = {
     },
 };
 
-static struct UBO {
-    float view[4][4];
-    float proj[4][4];
-} ubo;
-
 // Private Declarations
 VkInstance gfx_init_instance(void);
 VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
@@ -98,6 +93,7 @@ void record_command_buffers(
     VkBuffer vertex_buffer,
     VkDescriptorSet *descriptor_sets,
     VkExtent2D extent);
+void update_uniform_buffers(VkDevice device, VkDeviceMemory memory, struct UBO *ubo);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -138,6 +134,7 @@ struct GfxEngine {
 // Global Variables
 static struct GfxEngine engine = {};
 static VkResult result = VK_SUCCESS;
+static uint32_t current_frame = 0;
 
 // Public functions
 int gfx_init(GLFWwindow *window) {
@@ -200,9 +197,9 @@ int gfx_init(GLFWwindow *window) {
     engine.vertices_resource = gfx_init_vertices_resource(engine.device, engine.physical_device.gpu, sizeof vertex_pos);
 
     // TODO: move to game/main
-    void *data = malloc(sizeof vertex_pos);
-    vkMapMemory(engine.device, engine.vertices_resource.memory, 0, sizeof vertex_pos, 0, data);
-    memcpy(data, &vertex_pos, sizeof vertex_pos); 
+    void *data;
+    vkMapMemory(engine.device, engine.vertices_resource.memory, 0, sizeof vertex_pos, 0, &data);
+    memcpy(data, &vertex_pos, sizeof vertex_pos);
     vkUnmapMemory(engine.device, engine.vertices_resource.memory);
 
     engine.uniform_resources = gfx_init_uniform_resources(engine.device, engine.physical_device.gpu, engine.swapchain_length);
@@ -247,6 +244,9 @@ int gfx_init(GLFWwindow *window) {
 }
 
 void gfx_deinit() {
+
+    vkDeviceWaitIdle(engine.device);
+
     for (size_t i = 0; i < engine.swapchain_length; i++) {
         vkDestroyFramebuffer(engine.device, engine.framebuffers[i], 0);
     }
@@ -274,6 +274,67 @@ void gfx_deinit() {
     vkDestroyDevice(engine.device, 0);
     vkDestroySurfaceKHR(engine.instance, engine.surface, 0);
     vkDestroyInstance(engine.instance, 0);
+}
+
+void gfx_draw_frame(GLFWwindow *window, struct UBO *ubo) {
+    result = vkWaitForFences(engine.device, 1, &engine.is_main_render_done[current_frame], VK_TRUE, UINT64_MAX);
+    assert(result == VK_SUCCESS);
+
+    result = vkResetFences(engine.device, 1, &engine.is_main_render_done[current_frame]);
+    assert(result == VK_SUCCESS);
+
+    uint32_t image_index;
+    result = vkAcquireNextImageKHR(
+        engine.device,
+        engine.swapchain,
+        UINT64_MAX,
+        engine.is_image_available_semaphore[current_frame],
+        0,
+        &image_index
+    );
+    //if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    //    deinitSwapchainWithNewExtent();
+    //    getExtent(window);
+    //    try initSwapchain();
+    //}
+
+    update_uniform_buffers(engine.device, engine.uniform_resources[current_frame].memory, ubo);
+
+    VkPipelineStageFlags wait_stages[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    };
+    
+    VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &engine.is_image_available_semaphore[current_frame],
+        .pWaitDstStageMask = wait_stages,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &engine.command_buffers[image_index],
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &engine.is_present_ready_semaphore[current_frame],
+    };
+
+    result = vkQueueSubmit(engine.graphics_queue, 1, &submit_info, engine.is_main_render_done[current_frame]);
+    assert(result == VK_SUCCESS);
+
+    VkPresentInfoKHR present_info = {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &engine.is_present_ready_semaphore[current_frame],
+        .swapchainCount = 1,
+        .pSwapchains = &engine.swapchain,
+        .pImageIndices = &image_index,
+    };
+
+    result = vkQueuePresentKHR(engine.graphics_queue, &present_info);
+//    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+//        deinitSwapchainWithNewExtent();
+//        getExtent(window);
+//        try initSwapchain();
+//    }
+
+    current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 // Private functions
@@ -1144,17 +1205,24 @@ void record_command_buffers(
             .pClearValues = &clear_color,
         };
 
-        VkDeviceSize device_size = 0.0f;
+        VkDeviceSize vertex_buffer_offsets = 0.0f;
         
         vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, &device_size);
-        vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);    
+        vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, &vertex_buffer_offsets);
+        vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);
         vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
         vkCmdEndRenderPass(command_buffers[i]);
 
         result = vkEndCommandBuffer(command_buffers[i]);
         assert(result == VK_SUCCESS);
     }   
+}
+
+void update_uniform_buffers(VkDevice device, VkDeviceMemory memory, struct UBO *ubo) {
+    void *data;
+    vkMapMemory(device, memory, 0, sizeof *ubo, 0, &data);
+    memcpy(data, ubo, sizeof *ubo);
+    vkUnmapMemory(device, memory);
 }
 

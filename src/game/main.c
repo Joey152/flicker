@@ -17,8 +17,24 @@ int main(void) {
 
     gfx_init(window);
 
+    struct UBO ubo = {
+        .view = {
+            {1.0f, 0.0f, 0.0f, 0.0f},
+            {0.0f, 1.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 0.0f, 1.0f}
+        },
+        .proj = {
+            {1.0f, 0.0f, 0.0f, 0.0f},
+            {0.0f, 1.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 0.0f, 1.0f}
+        }
+    };
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        gfx_draw_frame(window, &ubo);
     }
 
     gfx_deinit();
