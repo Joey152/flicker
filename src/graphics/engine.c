@@ -83,7 +83,7 @@ VkCommandBuffer* gfx_init_command_buffers(
     VkDevice device,
     uint32_t length,
     VkCommandPool command_pool);
-void record_command_buffers(
+void gfx_record_command_buffers(
     uint32_t length,
     VkCommandBuffer *command_buffers,
     VkRenderPass render_pass,
@@ -93,7 +93,10 @@ void record_command_buffers(
     VkBuffer vertex_buffer,
     VkDescriptorSet *descriptor_sets,
     VkExtent2D extent);
-void update_uniform_buffers(VkDevice device, VkDeviceMemory memory, struct UBO *ubo);
+void gfx_update_uniform_buffers(VkDevice device, VkDeviceMemory memory, struct UBO *ubo);
+void gfx_init_with_extent();
+void gfx_deinit_with_extent();
+void gfx_reinit_swapchain(GLFWwindow *window);
 
 // Private Structs
 struct GfxPhysicalDevice {
@@ -210,35 +213,8 @@ int gfx_init(GLFWwindow *window) {
         engine.descriptor_pool,
         engine.uniform_resources
     );
-    engine.pipeline = gfx_init_pipeline( 
-        engine.device,
-        engine.extent,
-        engine.pipeline_layout,
-        engine.render_pass
-    );
-    engine.framebuffers = gfx_init_framebuffers(
-        engine.device,
-        engine.swapchain_length,
-        engine.swapchain_image_views,
-        engine.render_pass,
-        engine.extent
-    );
-    engine.command_buffers = gfx_init_command_buffers(
-        engine.device,
-        engine.swapchain_length,
-        engine.graphics_command_pool
-    );
-    record_command_buffers(
-        engine.swapchain_length,
-        engine.command_buffers,
-        engine.render_pass,
-        engine.framebuffers,
-        engine.pipeline,
-        engine.pipeline_layout,
-        engine.vertices_resource.buffer,
-        engine.descriptor_sets,
-        engine.extent
-    );
+
+    gfx_init_with_extent();
 
     return 1;
 }
@@ -247,14 +223,8 @@ void gfx_deinit() {
 
     vkDeviceWaitIdle(engine.device);
 
-    for (size_t i = 0; i < engine.swapchain_length; i++) {
-        vkDestroyFramebuffer(engine.device, engine.framebuffers[i], 0);
-    }
-    free(engine.framebuffers);
-    vkDestroyPipeline(engine.device, engine.pipeline, 0);
-    for (size_t i = 0; i < engine.swapchain_length; i++) {
-        gfx_destroy_resource(engine.device, &engine.uniform_resources[i], 0);
-    }
+    gfx_deinit_with_extent();
+
     gfx_destroy_resource(engine.device, &engine.vertices_resource, 0);
     vkDestroyRenderPass(engine.device, engine.render_pass, 0);
     vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, 0);
@@ -264,13 +234,11 @@ void gfx_deinit() {
         vkDestroySemaphore(engine.device, engine.is_present_ready_semaphore[i], 0);
         vkDestroyFence(engine.device, engine.is_main_render_done[i], 0);
     }
+    for (size_t i = 0; i < engine.swapchain_length; i++) {
+        gfx_destroy_resource(engine.device, &engine.uniform_resources[i], 0);
+    }
     vkDestroyDescriptorPool(engine.device, engine.descriptor_pool, 0);
     vkDestroyCommandPool(engine.device, engine.graphics_command_pool, 0);
-    for (size_t i = 0; i < engine.swapchain_length; i++) {
-        vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
-    }
-    free(engine.swapchain_image_views);
-    vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
     vkDestroyDevice(engine.device, 0);
     vkDestroySurfaceKHR(engine.instance, engine.surface, 0);
     vkDestroyInstance(engine.instance, 0);
@@ -292,13 +260,12 @@ void gfx_draw_frame(GLFWwindow *window, struct UBO *ubo) {
         0,
         &image_index
     );
-    //if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    //    deinitSwapchainWithNewExtent();
-    //    getExtent(window);
-    //    try initSwapchain();
-    //}
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        gfx_deinit_with_extent();
+        gfx_reinit_swapchain(window);
+    }
 
-    update_uniform_buffers(engine.device, engine.uniform_resources[current_frame].memory, ubo);
+    gfx_update_uniform_buffers(engine.device, engine.uniform_resources[current_frame].memory, ubo);
 
     VkPipelineStageFlags wait_stages[] = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -328,16 +295,83 @@ void gfx_draw_frame(GLFWwindow *window, struct UBO *ubo) {
     };
 
     result = vkQueuePresentKHR(engine.graphics_queue, &present_info);
-//    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-//        deinitSwapchainWithNewExtent();
-//        getExtent(window);
-//        try initSwapchain();
-//    }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        gfx_deinit_with_extent();
+        gfx_reinit_swapchain(window);
+    }
 
     current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 // Private functions
+
+void gfx_init_with_extent() {
+    engine.pipeline = gfx_init_pipeline( 
+        engine.device,
+        engine.extent,
+        engine.pipeline_layout,
+        engine.render_pass
+    );
+    engine.framebuffers = gfx_init_framebuffers(
+        engine.device,
+        engine.swapchain_length,
+        engine.swapchain_image_views,
+        engine.render_pass,
+        engine.extent
+    );
+    engine.command_buffers = gfx_init_command_buffers(
+        engine.device,
+        engine.swapchain_length,
+        engine.graphics_command_pool
+    );
+    gfx_record_command_buffers(
+        engine.swapchain_length,
+        engine.command_buffers,
+        engine.render_pass,
+        engine.framebuffers,
+        engine.pipeline,
+        engine.pipeline_layout,
+        engine.vertices_resource.buffer,
+        engine.descriptor_sets,
+        engine.extent
+    );
+}
+
+void gfx_reinit_swapchain(GLFWwindow *window) {
+    engine.extent = gfx_get_extent(engine.physical_device.gpu, engine.surface, window);
+    engine.swapchain = gfx_init_swapchain(
+        engine.device,
+        engine.physical_device.gpu,
+        engine.surface,
+        engine.surface_format,
+        engine.extent
+    );
+    engine.swapchain_images = gfx_init_swapchain_images(engine.device, engine.swapchain, &engine.swapchain_length);
+    engine.swapchain_image_views = gfx_init_swapchain_image_views(
+        engine.device,
+        engine.swapchain_length,
+        engine.swapchain_images,
+        &engine.surface_format
+    );
+
+    gfx_init_with_extent();
+}
+
+void gfx_deinit_with_extent() {
+    vkDeviceWaitIdle(engine.device);
+
+    for (size_t i = 0; i < engine.swapchain_length; i++) {
+        vkDestroyFramebuffer(engine.device, engine.framebuffers[i], 0);
+    }
+    free(engine.framebuffers);
+    vkDestroyPipeline(engine.device, engine.pipeline, 0);
+    for (size_t i = 0; i < engine.swapchain_length; i++) {
+        vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
+    }
+    free(engine.swapchain_image_views);
+    vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
+}
+
 VkInstance gfx_init_instance(void) {
     VkInstance instance = 0;
 
@@ -1168,7 +1202,7 @@ VkCommandBuffer* gfx_init_command_buffers(
     return command_buffers;
 }
 
-void record_command_buffers(
+void gfx_record_command_buffers(
     uint32_t length,
     VkCommandBuffer *command_buffers,
     VkRenderPass render_pass,
@@ -1219,7 +1253,7 @@ void record_command_buffers(
     }   
 }
 
-void update_uniform_buffers(VkDevice device, VkDeviceMemory memory, struct UBO *ubo) {
+void gfx_update_uniform_buffers(VkDevice device, VkDeviceMemory memory, struct UBO *ubo) {
     void *data;
     vkMapMemory(device, memory, 0, sizeof *ubo, 0, &data);
     memcpy(data, ubo, sizeof *ubo);

@@ -31,6 +31,8 @@ vulkan_dep = dependency('vulkan')
 
 inc = include_directories('include')
 
+linmath_lib = static_library('linmath', 'src/common/linmath.c', include_directories: inc)
+
 graphics_lib = static_library('graphics', 
     [
         'src/graphics/engine.c',
@@ -45,6 +47,6 @@ graphics_lib = static_library('graphics',
 executable('flicker', 'src/game/main.c',
     dependencies: [glfw_dep],
     include_directories: inc,
-    link_with: [graphics_lib],
+    link_with: [graphics_lib, linmath_lib],
     link_args: ['-ldl']
 )
