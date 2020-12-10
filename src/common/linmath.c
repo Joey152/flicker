@@ -57,33 +57,47 @@ void mat4_mul(float m[static 4][4], float a[static 4][4], float b[static 4][4]) 
     memcpy(m, temp, 4 * 4 * sizeof **temp);
 }
 
-void mat4_view(float m[static 4][4], float pos[static 3], float dir[static 3]) {
-    float up[3] = {0.0f, 1.0f, 0.0f};
+void mat4_view(float m[static 4][4], float pos[static 3], float pitch, float yaw) {
+    float cos_yaw = cosf(yaw);
+    float sin_yaw = sinf(yaw);
+    float cos_pitch = cosf(pitch);
+    float sin_pitch = sinf(pitch);
 
-    vec3_normalize(dir);
-    float *zaxis = dir;
-
-    float xaxis[3];
-    vec3_cross(xaxis, up, zaxis);
-    vec3_normalize(xaxis);
-
-    float yaxis[3];
-    vec3_cross(yaxis, zaxis, xaxis);
+    float xaxis[3] = {cos_yaw, 0.0f, -sin_yaw}; 
+    float yaxis[3] = {sin_yaw * sin_pitch, cos_pitch, cos_yaw * sin_pitch};
+    float zaxis[3] = {sin_yaw * cos_pitch, -sin_pitch, cos_yaw * cos_pitch};
 
     float posx = -vec3_dot(xaxis, pos); 
     float posy = -vec3_dot(yaxis, pos); 
     float posz = -vec3_dot(zaxis, pos); 
 
+//    m[0][0] = xaxis[0]; 
+//    m[0][1] = xaxis[1];
+//    m[0][2] = xaxis[2];
+//    m[0][3] = 0.0f;
+//    m[1][0] = yaxis[0]; 
+//    m[1][1] = yaxis[1];
+//    m[1][2] = yaxis[2];
+//    m[1][3] = 0.0f;
+//    m[2][0] = zaxis[0]; 
+//    m[2][1] = zaxis[1];
+//    m[2][2] = zaxis[2];
+//    m[2][3] = 0.0f;
+//    m[3][0] = posx; 
+//    m[3][1] = posy;
+//    m[3][2] = posz;
+//    m[3][3] = 1.0f;
+
     m[0][0] = xaxis[0]; 
-    m[0][1] = xaxis[1];
-    m[0][2] = xaxis[2];
+    m[0][1] = yaxis[0];
+    m[0][2] = zaxis[0];
     m[0][3] = 0.0f;
-    m[1][0] = yaxis[0]; 
+    m[1][0] = xaxis[1]; 
     m[1][1] = yaxis[1];
-    m[1][2] = yaxis[2];
+    m[1][2] = zaxis[1];
     m[1][3] = 0.0f;
-    m[2][0] = zaxis[0]; 
-    m[2][1] = zaxis[1];
+    m[2][0] = xaxis[2]; 
+    m[2][1] = yaxis[2];
     m[2][2] = zaxis[2];
     m[2][3] = 0.0f;
     m[3][0] = posx; 
