@@ -14,6 +14,5 @@ struct VertexColor {
 
 struct Vertex {
     struct VertexPos pos;
-    struct VertexColor color;
 };
 

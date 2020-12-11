@@ -21,15 +21,12 @@
 static struct Vertex vertex_pos[] = {
     {
         .pos = { .x = 0.0, .y = 1.0, .z = 1.0 },
-        .color = { .r = 1.0, .g = 0.0, .b = 0.0 },
     },
     {
         .pos = { .x = 1.0, .y = 0.0, .z = 1.0 },
-        .color = { .r = 0.0, .g = 1.0, .b = 0.0 },
     },
     {
         .pos = { .x = -1.0, .y = 0.0, .z = 1.0 },
-        .color = { .r = 0.0, .g = 0.0, .b = 1.0 },
     },
 };
 
@@ -1005,19 +1002,13 @@ VkPipeline gfx_init_pipeline(
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct Vertex, pos),
         },
-        {
-            .binding = 0,
-            .location = 1,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(struct Vertex, color),
-        },
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding_description,
-        .vertexAttributeDescriptionCount = 2,
+        .vertexAttributeDescriptionCount = 1,
         .pVertexAttributeDescriptions = &attribute_descriptions[0],
     };
 

@@ -40,7 +40,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
     }
     if (key == GLFW_KEY_A) {
-        float strafe_left[3] = {-strafe_right[0], 0.0f, -strafe_left[2]};
+        float strafe_left[3] = {-strafe_right[0], 0.0f, -strafe_right[2]};
         vec3_add(camera_pos, strafe_left); 
         mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
     }
@@ -86,21 +86,8 @@ int main(void) {
 
     gfx_init(window);
 
-    // TODO: angled up
-    // 0 is forward z =1 
-    // bounds [-pi/2.0,pi/2.0]
-    mouse_pitch = -M_PI/2.0f;
-    mouse_yaw = 0.0f;
     mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
-
-    float i[4][4] = {
-        {1.0f, 0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 0.0f, 1.0f},
-    };
-    mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 10.0f);
-    //memcpy(ubo.proj, i, sizeof i);
+    mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 1000.0f);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
