@@ -8,8 +8,8 @@ struct VertexPos {
 
 struct VertexColor {
     float r;
-    float b;
     float g;
+    float b;
 } __attribute__((__packed__));
 
 struct Vertex {

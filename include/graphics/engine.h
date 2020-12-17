@@ -3,12 +3,14 @@
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
+#include <graphics/vertex.h>
+
 struct UBO {
     float view[4][4];
     float proj[4][4];
 };
 
-int gfx_init(GLFWwindow *window);
+int gfx_init(GLFWwindow *window, size_t static_vertices_size, struct Vertex static_vertices[static_vertices_size]);
 
 void gfx_deinit();
 

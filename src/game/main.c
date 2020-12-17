@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "graphics/engine.h"
+#include "graphics/vertex.h"
 #include "common/linmath.h"
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
@@ -17,6 +18,27 @@ static float mouse_yaw = 0.0f;
 static float mouse_pitch = 0.0f;
 static double xmouse_prev = 0.0f;
 static double ymouse_prev = 0.0f;
+static struct Vertex vertex_pos[] = {
+    {
+        .pos = { .x = 0.0, .y = 1.0, .z = 1.0 },
+    },
+    {
+        .pos = { .x = 1.0, .y = 0.0, .z = 1.0 },
+    },
+    {
+        .pos = { .x = -1.0, .y = 0.0, .z = 1.0 },
+    },
+    {
+        .pos = { .x = 0.0, .y = 0.0, .z = 2.0 },
+    },
+    {
+        .pos = { .x = 1.0, .y = 1.0, .z = 2.0 },
+    },
+    {
+        .pos = { .x = -1.0, .y = 1.0, .z = 2.0 },
+    },
+};
+
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     float cos_yaw = cosf(mouse_yaw);
@@ -47,7 +69,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 }
 
 void cursor_position_callback(GLFWwindow *window, double xpos, double ypos) {
-    printf("raw: %f %f\n", xpos, ypos);
 
     float inc_yaw = mouse_yaw - (0.01f * (xmouse_prev - xpos));
     float inc_pitch = mouse_pitch - (0.01f * (ymouse_prev - ypos));
@@ -58,6 +79,8 @@ void cursor_position_callback(GLFWwindow *window, double xpos, double ypos) {
 
     mouse_yaw = inc_yaw;
     mouse_yaw = fmod(mouse_yaw, 2 * M_PI);
+
+    printf("angles: %f %f\n", mouse_yaw, mouse_pitch);
 
     mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
 
@@ -84,7 +107,7 @@ int main(void) {
     glfwGetCursorPos(window, &xmouse_prev, &ymouse_prev);
     glfwSetCursorPosCallback(window, cursor_position_callback);
 
-    gfx_init(window);
+    gfx_init(window, 6, vertex_pos);
 
     mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
     mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 1000.0f);

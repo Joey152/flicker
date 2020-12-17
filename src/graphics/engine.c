@@ -17,19 +17,6 @@
 // TODO: cant go over the swapchain_length
 #define MAX_FRAMES_IN_FLIGHT 2
 
-// TODO move
-static struct Vertex vertex_pos[] = {
-    {
-        .pos = { .x = 0.0, .y = 1.0, .z = 1.0 },
-    },
-    {
-        .pos = { .x = 1.0, .y = 0.0, .z = 1.0 },
-    },
-    {
-        .pos = { .x = -1.0, .y = 0.0, .z = 1.0 },
-    },
-};
-
 // Private Declarations
 VkInstance gfx_init_instance(void);
 VkSurfaceKHR gfx_init_surface(VkInstance instance, GLFWwindow *window);
@@ -74,6 +61,7 @@ VkFramebuffer* gfx_init_framebuffers(
     VkDevice device,
     uint32_t image_view_length,
     VkImageView *image_views,
+    VkImageView depth_image_view,
     VkRenderPass render_pass,
     VkExtent2D extent);
 VkCommandBuffer* gfx_init_command_buffers(
@@ -119,6 +107,9 @@ struct GfxEngine {
     VkSemaphore *is_image_available_semaphore;
     VkSemaphore *is_present_ready_semaphore;
     VkFence *is_main_render_done;
+    VkImage depth_image;
+    VkDeviceMemory depth_image_memory;
+    VkImageView depth_image_view;
 
     VkDescriptorSetLayout descriptor_layout;
     VkPipelineLayout pipeline_layout;
@@ -137,7 +128,7 @@ static VkResult result = VK_SUCCESS;
 static uint32_t current_frame = 0;
 
 // Public functions
-int gfx_init(GLFWwindow *window) {
+int gfx_init(GLFWwindow *window, size_t static_vertices_size, struct Vertex static_vertices[static_vertices_size]) {
     engine.instance = gfx_init_instance();
     engine.surface = gfx_init_surface(engine.instance, window);
     engine.physical_device = gfx_init_physical_device(engine.instance, engine.surface);
@@ -194,12 +185,12 @@ int gfx_init(GLFWwindow *window) {
     engine.descriptor_layout = gfx_init_descriptor_layout(engine.device);
     engine.pipeline_layout = gfx_init_pipeline_layout(engine.device, engine.descriptor_layout);
     engine.render_pass = gfx_init_render_pass(engine.device, engine.surface_format.format);
-    engine.vertices_resource = gfx_init_vertices_resource(engine.device, engine.physical_device.gpu, sizeof vertex_pos);
+    engine.vertices_resource = gfx_init_vertices_resource(engine.device, engine.physical_device.gpu, sizeof static_vertices[0] * static_vertices_size);
 
     // TODO: move to game/main
     void *data;
-    vkMapMemory(engine.device, engine.vertices_resource.memory, 0, sizeof vertex_pos, 0, &data);
-    memcpy(data, &vertex_pos, sizeof vertex_pos);
+    vkMapMemory(engine.device, engine.vertices_resource.memory, 0, sizeof static_vertices[0] * static_vertices_size, 0, &data);
+    memcpy(data, static_vertices, sizeof static_vertices[0] * static_vertices_size);
     vkUnmapMemory(engine.device, engine.vertices_resource.memory);
 
     engine.uniform_resources = gfx_init_uniform_resources(engine.device, engine.physical_device.gpu, engine.swapchain_length);
@@ -303,6 +294,73 @@ void gfx_draw_frame(GLFWwindow *window, struct UBO *ubo) {
 // Private functions
 
 void gfx_init_with_extent() {
+    VkFormat depth_formats[3] = {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+    VkFormat depth_format = VK_FORMAT_UNDEFINED;
+    for (size_t i = 0; i < 3; i++) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(engine.physical_device.gpu, depth_formats[i], &props);
+
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            depth_format = depth_formats[i];
+            break;
+        }
+    }
+    assert(depth_format != VK_FORMAT_UNDEFINED); 
+
+    VkImageCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .extent.width = engine.extent.width,
+        .extent.height = engine.extent.height,
+        .extent.depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .format = depth_format,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+
+    result = vkCreateImage(engine.device, &create_info, 0, &engine.depth_image);
+    assert(result == VK_SUCCESS);
+
+    VkMemoryRequirements memory_requirements;
+    vkGetImageMemoryRequirements(engine.device, engine.depth_image, &memory_requirements);
+
+    VkMemoryAllocateInfo alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memory_requirements.size,
+        .memoryTypeIndex = gfx_get_memory_type(
+            engine.physical_device.gpu,
+            memory_requirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+        ),
+    };
+
+    result = vkAllocateMemory(engine.device, &alloc_info, 0, &engine.depth_image_memory);
+    assert(result == VK_SUCCESS);
+
+    vkBindImageMemory(engine.device, engine.depth_image, engine.depth_image_memory, 0);
+
+    VkImageViewCreateInfo view_create_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = engine.depth_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = depth_format,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    result = vkCreateImageView(engine.device, &view_create_info, 0, &engine.depth_image_view);
+    assert(result == VK_SUCCESS);
+
     engine.pipeline = gfx_init_pipeline( 
         engine.device,
         engine.extent,
@@ -313,6 +371,7 @@ void gfx_init_with_extent() {
         engine.device,
         engine.swapchain_length,
         engine.swapchain_image_views,
+        engine.depth_image_view,
         engine.render_pass,
         engine.extent
     );
@@ -366,6 +425,9 @@ void gfx_deinit_with_extent() {
         vkDestroyImageView(engine.device, engine.swapchain_image_views[i], 0);
     }
     free(engine.swapchain_image_views);
+    vkDestroyImageView(engine.device, engine.depth_image_view, 0);
+    vkFreeMemory(engine.device, engine.depth_image_memory, 0);
+    vkDestroyImage(engine.device, engine.depth_image, 0);
     vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
 }
 
@@ -783,7 +845,20 @@ VkPipelineLayout gfx_init_pipeline_layout(VkDevice device, VkDescriptorSetLayout
 }
 
 VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format) {
-    VkAttachmentDescription color_attachment_descriptions[] = {
+    VkFormat depth_formats[3] = {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+    VkFormat depth_format = VK_FORMAT_UNDEFINED;
+    for (size_t i = 0; i < 3; i++) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(engine.physical_device.gpu, depth_formats[i], &props);
+
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            depth_format = depth_formats[i];
+            break;
+        }
+    }
+    assert(depth_format != VK_FORMAT_UNDEFINED); 
+
+    VkAttachmentDescription attachment_descriptions[] = {
         {
             .format = format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -793,6 +868,16 @@ VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format) {
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        },
+        {
+            .format = depth_format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         }
     };
 
@@ -803,28 +888,34 @@ VkRenderPass gfx_init_render_pass(VkDevice device, VkFormat format) {
         }
     };
 
+    VkAttachmentReference depth_attachment_ref = {
+        .attachment = 1,
+        .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
     VkSubpassDescription subpasses[] = {
          {
             .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
             .colorAttachmentCount = sizeof color_attachment_refs / sizeof color_attachment_refs[0],
             .pColorAttachments = color_attachment_refs,
+            .pDepthStencilAttachment = &depth_attachment_ref
         },
     };
 
     VkSubpassDependency dependency = {
         .srcSubpass = VK_SUBPASS_EXTERNAL,
         .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
         .srcAccessMask = 0,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         .dependencyFlags = 0,
     };
 
     VkRenderPassCreateInfo create_info =  {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = sizeof color_attachment_descriptions / sizeof color_attachment_descriptions[0],
-        .pAttachments = color_attachment_descriptions,
+        .attachmentCount = sizeof attachment_descriptions / sizeof attachment_descriptions[0],
+        .pAttachments = attachment_descriptions,
         .subpassCount = sizeof subpasses / sizeof *subpasses,
         .pSubpasses = subpasses,
         .dependencyCount = 1,
@@ -1001,15 +1092,15 @@ VkPipeline gfx_init_pipeline(
             .location = 0,
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct Vertex, pos),
-        },
+         },
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding_description,
-        .vertexAttributeDescriptionCount = 1,
-        .pVertexAttributeDescriptions = &attribute_descriptions[0],
+        .vertexAttributeDescriptionCount = sizeof attribute_descriptions / sizeof attribute_descriptions[0],
+        .pVertexAttributeDescriptions = attribute_descriptions,
     };
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly = {
@@ -1068,8 +1159,15 @@ VkPipeline gfx_init_pipeline(
         .alphaToCoverageEnable = VK_FALSE,
         .alphaToOneEnable = VK_FALSE,
     };
-    
-    // TODO: depth
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthBoundsTestEnable = VK_FALSE,
+        .stencilTestEnable = VK_FALSE,
+    };
     
     VkPipelineColorBlendAttachmentState color_blend_attachments[] = {
          {
@@ -1106,7 +1204,7 @@ VkPipeline gfx_init_pipeline(
         .pViewportState = &viewport,
         .pRasterizationState = &rasterization,
         .pMultisampleState = &multisample,
-        .pDepthStencilState = 0,
+        .pDepthStencilState = &depth_stencil,
         .pColorBlendState = &color_blend,
         .pDynamicState = 0,
         .layout = pipeline_layout,
@@ -1147,6 +1245,7 @@ VkFramebuffer* gfx_init_framebuffers(
     VkDevice device,
     uint32_t image_view_length,
     VkImageView *image_views,
+    VkImageView depth_image_view,
     VkRenderPass render_pass,
     VkExtent2D extent
 ) {
@@ -1161,8 +1260,9 @@ VkFramebuffer* gfx_init_framebuffers(
     };
     
     for (size_t i = 0; i < image_view_length; i++) {
-        VkImageView attachments[1] = {
-            image_views[i]
+        VkImageView attachments[2] = {
+            image_views[i],
+            depth_image_view
         };
 
         create_info.attachmentCount = sizeof attachments / sizeof attachments[0];
@@ -1208,9 +1308,14 @@ void gfx_record_command_buffers(
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     
-    VkClearValue clear_color = {
-        .color = {
-            .float32 = {0.0f, 0.0f, 0.0f, 1.0f}
+    VkClearValue clear_color[2] = {
+        {
+            .color = {
+                .float32 = {0.0f, 0.0f, 0.0f, 1.0f}
+            }
+        },
+        {
+            .depthStencil = {1.0f, 0.0f}
         }
     };
 
@@ -1226,8 +1331,8 @@ void gfx_record_command_buffers(
                 .offset = { 0.0f, 0.0f },
                 .extent = extent,
             },
-            .clearValueCount = 1,
-            .pClearValues = &clear_color,
+            .clearValueCount = sizeof clear_color / sizeof clear_color[0],
+            .pClearValues = clear_color,
         };
 
         VkDeviceSize vertex_buffer_offsets = 0.0f;
@@ -1236,7 +1341,7 @@ void gfx_record_command_buffers(
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, &vertex_buffer_offsets);
         vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);
-        vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
+        vkCmdDraw(command_buffers[i], 6, 1, 0, 0);
         vkCmdEndRenderPass(command_buffers[i]);
 
         result = vkEndCommandBuffer(command_buffers[i]);
