@@ -115,6 +115,11 @@ struct GfxEngine {
     VkPipelineLayout pipeline_layout;
     VkRenderPass render_pass;
     struct GfxResource vertices_resource;
+    uint32_t vertex_buffers_length;
+    VkBuffer vertex_buffer;
+    VkDeviceMemory vertex_memory;
+    uint32_t total_vertex_size;
+    VkDeviceSize *vertex_buffer_offsets;
     struct GfxResource *uniform_resources;
     VkDescriptorSet *descriptor_sets;
     VkPipeline pipeline;
@@ -128,7 +133,7 @@ static VkResult result = VK_SUCCESS;
 static uint32_t current_frame = 0;
 
 // Public functions
-int gfx_init(GLFWwindow *window, size_t static_vertices_size, struct Vertex static_vertices[static_vertices_size]) {
+int gfx_init(GLFWwindow *window, size_t number_of_objs, uint32_t obj_sizes[number_of_objs], char const *const path_to_obj_files[number_of_objs]) {
     engine.instance = gfx_init_instance();
     engine.surface = gfx_init_surface(engine.instance, window);
     engine.physical_device = gfx_init_physical_device(engine.instance, engine.surface);
@@ -185,13 +190,58 @@ int gfx_init(GLFWwindow *window, size_t static_vertices_size, struct Vertex stat
     engine.descriptor_layout = gfx_init_descriptor_layout(engine.device);
     engine.pipeline_layout = gfx_init_pipeline_layout(engine.device, engine.descriptor_layout);
     engine.render_pass = gfx_init_render_pass(engine.device, engine.surface_format.format);
-    engine.vertices_resource = gfx_init_vertices_resource(engine.device, engine.physical_device.gpu, sizeof static_vertices[0] * static_vertices_size);
 
-    // TODO: move to game/main
+    //engine.vertices_resource = gfx_init_vertices_resource(engine.device, engine.physical_device.gpu, sizeof static_vertices[0] * static_vertices_size);
+
+    engine.vertex_buffers_length = number_of_objs;
+    engine.total_vertex_size = 0;
+    for (size_t i = 0; i < number_of_objs; i++) {
+        engine.total_vertex_size += obj_sizes[i];
+    }
+
+    struct VkBufferCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = engine.total_vertex_size,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    result = vkCreateBuffer(engine.device, &create_info, 0, &engine.vertex_buffer);
+    assert(result == VK_SUCCESS);
+
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(engine.device, engine.vertex_buffer, &memory_requirements);
+
+    VkMemoryAllocateInfo alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memory_requirements.size,
+        .memoryTypeIndex = gfx_get_memory_type(
+            engine.physical_device.gpu,
+            memory_requirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        ),
+    };
+
+    result = vkAllocateMemory(engine.device, &alloc_info, 0, &engine.vertex_memory);
+    assert(result == VK_SUCCESS);
+
+    size_t current_offset = 0;
     void *data;
-    vkMapMemory(engine.device, engine.vertices_resource.memory, 0, sizeof static_vertices[0] * static_vertices_size, 0, &data);
-    memcpy(data, static_vertices, sizeof static_vertices[0] * static_vertices_size);
-    vkUnmapMemory(engine.device, engine.vertices_resource.memory);
+    vkBindBufferMemory(engine.device, engine.vertex_buffer, engine.vertex_memory, 0);
+    vkMapMemory(engine.device, engine.vertex_memory, 0, engine.total_vertex_size, 0, &data);
+    for (size_t i = 0; i < number_of_objs; i++) {
+
+        FILE *file = fopen(path_to_obj_files[i], "rb");
+        char *v = malloc(obj_sizes[i]);
+        fseek(file, sizeof(uint32_t), SEEK_SET);
+        fread(v, sizeof *v, obj_sizes[i], file);
+
+        memcpy(&data[current_offset], v, obj_sizes[i]);
+
+        current_offset = current_offset + obj_sizes[i];
+
+        free(v);
+    }
+    vkUnmapMemory(engine.device, engine.vertex_memory);
 
     engine.uniform_resources = gfx_init_uniform_resources(engine.device, engine.physical_device.gpu, engine.swapchain_length);
     engine.descriptor_sets = gfx_init_descriptor_sets(
@@ -207,13 +257,16 @@ int gfx_init(GLFWwindow *window, size_t static_vertices_size, struct Vertex stat
     return 1;
 }
 
+
+
 void gfx_deinit() {
 
     vkDeviceWaitIdle(engine.device);
 
     gfx_deinit_with_extent();
 
-    gfx_destroy_resource(engine.device, &engine.vertices_resource, 0);
+    vkFreeMemory(engine.device, engine.vertex_memory, 0);
+    vkDestroyBuffer(engine.device, engine.vertex_buffer, 0);
     vkDestroyRenderPass(engine.device, engine.render_pass, 0);
     vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, 0);
     vkDestroyDescriptorSetLayout(engine.device, engine.descriptor_layout, 0);
@@ -387,7 +440,7 @@ void gfx_init_with_extent() {
         engine.framebuffers,
         engine.pipeline,
         engine.pipeline_layout,
-        engine.vertices_resource.buffer,
+        engine.vertex_buffer,
         engine.descriptor_sets,
         engine.extent
     );
@@ -429,6 +482,7 @@ void gfx_deinit_with_extent() {
     vkFreeMemory(engine.device, engine.depth_image_memory, 0);
     vkDestroyImage(engine.device, engine.depth_image, 0);
     vkDestroySwapchainKHR(engine.device, engine.swapchain, 0);
+    free(engine.swapchain_images);
 }
 
 VkInstance gfx_init_instance(void) {
@@ -949,7 +1003,7 @@ struct GfxResource gfx_init_vertices_resource(VkDevice device, VkPhysicalDevice 
         .allocationSize = memory_requirements.size,
         .memoryTypeIndex = gfx_get_memory_type(
             physical_device,
-            memory_requirements.memoryTypeBits, 
+            memory_requirements.memoryTypeBits,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
         ),
     };
@@ -1093,6 +1147,12 @@ VkPipeline gfx_init_pipeline(
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct Vertex, pos),
          },
+         {
+             .binding = 0,
+             .location = 1,
+             .format = VK_FORMAT_R32G32B32_SFLOAT,
+             .offset = offsetof(struct Vertex, centroid),
+         }
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
@@ -1335,13 +1395,13 @@ void gfx_record_command_buffers(
             .pClearValues = clear_color,
         };
 
-        VkDeviceSize vertex_buffer_offsets = 0.0f;
-        
+        VkDeviceSize offsets[1] = {0};
+
         vkCmdBeginRenderPass(command_buffers[i], &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, &vertex_buffer_offsets);
+        vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &engine.vertex_buffer, offsets);
         vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);
-        vkCmdDraw(command_buffers[i], 6, 1, 0, 0);
+        vkCmdDraw(command_buffers[i], engine.total_vertex_size / sizeof(float), 1, 0, 0);
         vkCmdEndRenderPass(command_buffers[i]);
 
         result = vkEndCommandBuffer(command_buffers[i]);

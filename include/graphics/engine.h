@@ -10,7 +10,7 @@ struct UBO {
     float proj[4][4];
 };
 
-int gfx_init(GLFWwindow *window, size_t static_vertices_size, struct Vertex static_vertices[static_vertices_size]);
+int gfx_init(GLFWwindow *window, size_t vertices_size, uint32_t buffer_sizes[vertices_size], char const *const vertices[vertices_size]);
 
 void gfx_deinit();
 

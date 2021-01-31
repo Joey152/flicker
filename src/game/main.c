@@ -1,11 +1,12 @@
 #include <GLFW/glfw3.h>
 
+#include <assert.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 
 #include "graphics/engine.h"
-#include "graphics/vertex.h"
 #include "common/linmath.h"
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
@@ -18,27 +19,6 @@ static float mouse_yaw = 0.0f;
 static float mouse_pitch = 0.0f;
 static double xmouse_prev = 0.0f;
 static double ymouse_prev = 0.0f;
-static struct Vertex vertex_pos[] = {
-    {
-        .pos = { .x = 0.0, .y = 1.0, .z = 1.0 },
-    },
-    {
-        .pos = { .x = 1.0, .y = 0.0, .z = 1.0 },
-    },
-    {
-        .pos = { .x = -1.0, .y = 0.0, .z = 1.0 },
-    },
-    {
-        .pos = { .x = 0.0, .y = 0.0, .z = 2.0 },
-    },
-    {
-        .pos = { .x = 1.0, .y = 1.0, .z = 2.0 },
-    },
-    {
-        .pos = { .x = -1.0, .y = 1.0, .z = 2.0 },
-    },
-};
-
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     float cos_yaw = cosf(mouse_yaw);
@@ -107,7 +87,21 @@ int main(void) {
     glfwGetCursorPos(window, &xmouse_prev, &ymouse_prev);
     glfwSetCursorPosCallback(window, cursor_position_callback);
 
-    gfx_init(window, 6, vertex_pos);
+    char const *const persistent_mesh_vertices[2] = {
+        "asset/mesh/map1.vertex",
+        "asset/mesh/monkey.vertex",
+    };
+
+    uint32_t persistent_mesh_sizes[2];
+    uint32_t num_of_vertices[2];
+    for (size_t i = 0; i < 2; i++) {
+        FILE *file = fopen(persistent_mesh_vertices[i], "rb");
+        fread(&num_of_vertices[i], sizeof *num_of_vertices, 1, file);
+        persistent_mesh_sizes[i] = num_of_vertices[i] * sizeof(float) * 3 * 6;
+        fclose(file);
+    }
+
+    gfx_init(window, 2, persistent_mesh_sizes, persistent_mesh_vertices);
 
     mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
     mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 1000.0f);

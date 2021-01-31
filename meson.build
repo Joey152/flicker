@@ -2,7 +2,7 @@ project('Flicker', 'c')
 add_project_arguments('-Dc_std=c17', language : 'c')
 
 glslc = find_program('glslc')
-custom_target('compile main shaders',
+custom_target('main shaders',
     install: true,
     install_dir: 'asset/shader/main',
     input: files(
@@ -14,6 +14,20 @@ custom_target('compile main shaders',
         'frag.spv',
     ],
     command: [glslc, '-c', '@INPUT@']
+)
+
+python = find_program('python')
+create_meshes_script = files('script/create_meshes.py')
+custom_target('vertex data',
+    install: true,
+    install_dir: 'asset/mesh',
+    input: files(
+        'asset/mesh/cube.stl',
+        'asset/mesh/map1.stl',
+        'asset/mesh/monkey.stl',
+    ),
+    output: ['testoutput'],
+    command: [python, create_meshes_script, '@INPUT@']
 )
 
 cmake = import('cmake')
