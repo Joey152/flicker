@@ -20,6 +20,6 @@ struct VertexCentroid {
 
 struct Vertex {
     struct VertexPos pos;
-    struct VertexCentroid centroid;
+    //struct VertexCentroid centroid;
 };
 
