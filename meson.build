@@ -1,7 +1,8 @@
-project('Flicker', 'c')
+project('Test', 'c')
 add_project_arguments('-Dc_std=c17', language : 'c')
 
-glslc = find_program('glslc')
+
+glslangValidator = find_program('glslangValidator')
 custom_target('main shaders',
     install: true,
     install_dir: 'asset/shader/main',
@@ -13,54 +14,47 @@ custom_target('main shaders',
         'vert.spv',
         'frag.spv',
     ],
-    command: [glslc, '-c', '@INPUT@']
+    command: [glslangValidator, '--target-env', 'vulkan1.0',  '@INPUT@']
 )
-
-python = find_program('python')
-create_meshes_script = files('script/create_meshes.py')
-custom_target('vertex data',
-    install: true,
-    install_dir: 'asset/mesh',
-    input: files(
-        'asset/mesh/cube.stl',
-        'asset/mesh/map1.stl',
-        'asset/mesh/monkey.stl',
-    ),
-    output: ['testoutput'],
-    command: [python, create_meshes_script, '@INPUT@']
-)
-
-cmake = import('cmake')
-glfw_opt = cmake.subproject_options()
-glfw_opt.append_compile_args('c', '-w')
-glfw_opt.add_cmake_defines({
-    'GLFW_BUILD_EXAMPLES': 'OFF',
-    'GLFW_BUILD_TESTS': 'OFF',
-    'GLFW_BUILD_DOCS': 'OFF'
-})
-glfw_proj = cmake.subproject('glfw-3.3.2', options: glfw_opt)
-glfw_dep = glfw_proj.dependency('glfw')
-
-vulkan_dep = dependency('vulkan')
 
 inc = include_directories('include')
 
 linmath_lib = static_library('linmath', 'src/common/linmath.c', include_directories: inc)
 
+if host_machine.system() == 'windows'
+    window_source = [ 'src/window/win32.c' ]
+    vulkan_defines = '-DVK_USE_PLATFORM_WIN32_KHR'
+else
+    error('Unsupported system')
+endif
+
+volk_lib = static_library('volk',
+    [ 'src/volk/volk.c' ],
+    include_directories: inc,
+    c_args: vulkan_defines
+)
+
+window_lib = static_library('window',
+    window_source,
+    link_with: [volk_lib],
+    include_directories: inc,
+    c_args: vulkan_defines
+)
+
 graphics_lib = static_library('graphics', 
     [
-        'src/graphics/engine.c',
+        'src/graphics/graphics.c',
         'src/graphics/io.c',
-        'src/graphics/resource.c',
-        'src/graphics/vertex.c',
     ],
-    dependencies: [vulkan_dep],
-    include_directories: inc
+    dependencies: [],
+    link_with: [window_lib, volk_lib],
+    include_directories: inc,
+    c_args: vulkan_defines
 )
 
 executable('flicker', 'src/game/main.c',
-    dependencies: [glfw_dep],
+    dependencies: [],
+    link_with: [graphics_lib, window_lib, linmath_lib],
     include_directories: inc,
-    link_with: [graphics_lib, linmath_lib],
-    link_args: ['-ldl']
 )
+
