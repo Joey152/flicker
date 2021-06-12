@@ -1,13 +1,14 @@
 #include <volk/volk.h>
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "graphics/graphics.h"
 #include "graphics/io.h"
 #include "graphics/vertex.h"
-#include "window/window.h"
+#include "platform/platform.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -214,6 +215,8 @@ init_instance(VkInstance *instance)
         VK_KHR_SURFACE_EXTENSION_NAME,
 #ifdef _WIN32
         VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+#elif __linux__
+        VK_KHR_XCB_SURFACE_EXTENSION_NAME,
 #else
 #error Unsupported system
 #endif
@@ -318,7 +321,7 @@ init_surface(
     VkInstance const instance,
     VkSurfaceKHR *surface)
 {
-    result = window.create_surface(instance, surface);
+    result = platform.create_surface(instance, surface);
     assert(result == VK_SUCCESS);
 }
 
@@ -417,7 +420,7 @@ get_extent(
     } else {
         int width = 0;
         int height = 0;
-        window.get_window_size(&width, &height);
+        platform.get_window_size(&width, &height);
         if (width < surface_capabilities.minImageExtent.width) {
             width = surface_capabilities.minImageExtent.width;
         } else if (width > surface_capabilities.maxImageExtent.width) {
@@ -819,10 +822,10 @@ init_pipeline(
     // TODO change cwd() to install path
     uint32_t vert_shader_code_size = 0; 
     uint32_t *vert_shader_code = 0;
-    io_read_spirv(".\\build\\vert.spv", &vert_shader_code_size, &vert_shader_code);
+    io_read_spirv("./build/vert.spv", &vert_shader_code_size, &vert_shader_code);
     uint32_t frag_shader_code_size = 0; 
     uint32_t *frag_shader_code = 0;
-    io_read_spirv(".\\build\\frag.spv", &frag_shader_code_size, &frag_shader_code);
+    io_read_spirv("./build/frag.spv", &frag_shader_code_size, &frag_shader_code);
     VkShaderModule vert_shader_module;
     init_shader_module(device, vert_shader_code_size, vert_shader_code, &vert_shader_module);
     VkShaderModule frag_shader_module;
@@ -1332,9 +1335,9 @@ init(void)
     init_render_pass(physical_device.gpu, device, surface_format.format, &render_pass);
 
     struct Vertex vertices[] = {
-        { .pos = { .x = 0.0f, .y = 1.0f,  .z = 1.0f } },
-        { .pos = { .x = 0.0f, .y = -1.0f, .z = 1.0f } },
-        { .pos = { .x = 1.0f, .y = 0.0f,  .z = 1.0f } },
+        { .pos = { .x = -1.0f, .y = -1.0f, .z = 1.0f } },
+        { .pos = { .x = 0.0f, .y = 1.0f, .z = 1.0f } },
+        { .pos = { .x = 1.0f, .y = -1.0f, .z = 1.0f } },
     };
 
     VkBufferCreateInfo create_info = {

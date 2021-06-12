@@ -1,6 +1,7 @@
 #include "graphics/io.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <stdalign.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -13,8 +14,7 @@
 int
 io_read_spirv(char const *relative_path, uint32_t *size, uint32_t **spirv)
 {
-    FILE *file;
-    errno_t err = fopen_s(&file, relative_path, "rb");
+    FILE *file = fopen(relative_path, "rb");
     if (!file) {
         goto fail_fopen;
     }
@@ -26,6 +26,8 @@ io_read_spirv(char const *relative_path, uint32_t *size, uint32_t **spirv)
 
 #ifdef _WIN32
     *spirv = _aligned_malloc(*size, alignof(uint32_t));
+#elif __linux__
+    *spirv = aligned_alloc(alignof(uint32_t), *size);
 #else
 #error Unsupported OS
 #endif
@@ -42,8 +44,7 @@ io_read_spirv(char const *relative_path, uint32_t *size, uint32_t **spirv)
 
 int
 io_read_static_vertices(char const *relative_path, struct GfxResource *vertex) {
-    FILE *file;
-    fopen_s(&file, relative_path, "r");
+    FILE *file = fopen(relative_path, "r");
     if (!file) {
         goto fail_open;
     }

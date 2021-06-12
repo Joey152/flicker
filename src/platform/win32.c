@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "window/window.h"
+#include "platform/platform.h"
 
 HINSTANCE window_instance;
 HWND window_handle;

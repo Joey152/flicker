@@ -2,6 +2,8 @@
 
 #include <volk/volk.h>
 
+#include <stdint.h>
+
 enum ControlState 
 {
     CTRL_KEY_STATE_UP,
@@ -37,5 +39,5 @@ struct Platform
     void (*get_timestamp)(uint64_t *time);
 };
 
-extern const struct Platform window;
+extern const struct Platform platform;
 
