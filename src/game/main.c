@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "graphics/graphics.h"
 #include "common/linmath.h"
@@ -30,12 +31,14 @@ main(void)
     mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
     mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 1000.0f);
 
-    uint64_t time;
+    struct timespec timestamp = {};
     while (platform.is_window_terminated())
     {
         graphics.draw_frame(&ubo);
         platform.poll_events();
         platform.get_keyboard_events(&control_events);
+        platform.get_timestamp(&timestamp);
+        printf("time:%lu %ld\n", timestamp.tv_sec, timestamp.tv_nsec);
         //printf("W:%u A:%u S:%u D:%u\n", control_events.player_forward, control_events.player_back, control_events.player_strafe_left, control_events.player_strafe_right);
     }
 

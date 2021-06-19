@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "platform/platform.h"
 #include "volk/volk.h"
@@ -9,6 +10,7 @@ xcb_connection_t *connection;
 xcb_window_t window;
 xcb_screen_t *screen;
 xcb_generic_event_t* current_event;
+struct timespec current_time;
 
 static void
 create_window(void)
@@ -91,9 +93,9 @@ get_keyboard_events(struct ControlEvents *event)
 }
 
 static void
-get_timestamp(uint64_t *time)
+get_timestamp(struct timespec *time)
 {
-
+    clock_gettime(CLOCK_MONOTONIC_RAW, time);
 }
 
 const struct Platform platform = {

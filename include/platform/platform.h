@@ -3,6 +3,7 @@
 #include <volk/volk.h>
 
 #include <stdint.h>
+#include <time.h>
 
 enum ControlState 
 {
@@ -36,8 +37,9 @@ struct Platform
     VkResult (*create_surface)(VkInstance instance, VkSurfaceKHR *surface);
     void (*get_window_size)(int *width, int *height);
     void (*get_keyboard_events)(struct ControlEvents *event);
-    void (*get_timestamp)(uint64_t *time);
+    void (*get_timestamp)(struct timespec *time);
 };
 
 extern const struct Platform platform;
+
 

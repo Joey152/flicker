@@ -32,11 +32,13 @@ linmath_lib = static_library(
 if host_machine.system() == 'windows'
     platform_source = ['src/platform/win32.c']
     vulkan_defines = '-DVK_USE_PLATFORM_WIN32_KHR'
+    platform_links = ''
 elif host_machine.system() == 'linux'
     # TODO: how to detect X11 vs wayland
     platform_source = ['src/platform/xcb.c']
     libxcb_dep = cc.find_library('xcb')
     platform_deps = [libxcb_dep]
+    platform_links = ['-D_POSIX_C_SOURCE=199309L']
     vulkan_defines = '-DVK_USE_PLATFORM_XCB_KHR'
 else
     error('Unsupported system')
@@ -54,7 +56,7 @@ platform_lib = static_library('platform',
     dependencies: platform_deps,
     link_with: [volk_lib],
     include_directories: inc,
-    c_args: vulkan_defines
+    c_args: [vulkan_defines, platform_links]
 )
 
 graphics_lib = static_library('graphics', 
