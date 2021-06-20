@@ -33,11 +33,15 @@ struct Platform
 {
     void (*create_window)(void);
     int (*is_window_terminated)(void);
+    int (*is_application_open)(void);
+    int (*is_application_running)(void);
     void (*poll_events)(void);
     VkResult (*create_surface)(VkInstance instance, VkSurfaceKHR *surface);
     void (*get_window_size)(int *width, int *height);
     void (*get_keyboard_events)(struct ControlEvents *event);
     void (*get_timestamp)(struct timespec *time);
+    long (*get_delta_time)(void);
+    void (*init_timestamp)(void);
 };
 
 extern const struct Platform platform;

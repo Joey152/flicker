@@ -32,13 +32,14 @@ main(void)
     mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 1000.0f);
 
     struct timespec timestamp = {};
-    while (platform.is_window_terminated())
+    platform.init_timestamp();
+    while (platform.is_application_running())
     {
         graphics.draw_frame(&ubo);
         platform.poll_events();
         platform.get_keyboard_events(&control_events);
-        platform.get_timestamp(&timestamp);
-        printf("time:%lu %ld\n", timestamp.tv_sec, timestamp.tv_nsec);
+        long delta = platform.get_delta_time();
+        //printf("time:%f\n", delta / 1000000000.0);
         //printf("W:%u A:%u S:%u D:%u\n", control_events.player_forward, control_events.player_back, control_events.player_strafe_left, control_events.player_strafe_right);
     }
 
