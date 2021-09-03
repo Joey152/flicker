@@ -7,15 +7,60 @@
 
 #include "graphics/graphics.h"
 #include "graphics/io.h"
+#include "graphics/triangles.h"
 #include "graphics/vertex.h"
 #include "platform/platform.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
+struct Vertex vertices[] = {
+    {
+        .pos      = { .x = 10.0f, .y = -10.0f, .z = 1.0f },
+        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 1.0f },
+    },
+    {
+        .pos      = { .x = -10.0f, .y = 10.0f,  .z = 1.0f },
+        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 1.0f },
+    },
+    {
+        .pos      = { .x = 0.0f, .y = -10.0f, .z = 1.0f },
+        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 1.0f },
+    },
+    {
+        .pos      = { .x = -10.0f, .y = -10.0f, .z = 0.8f },
+        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 0.8f },
+    },
+    {
+        .pos      = { .x = 0.0f, .y = 10.0f,  .z = 0.8f },
+        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 0.8f },
+    },
+    {
+        .pos      = { .x = 10.0f, .y = -10.0f, .z = 0.8f },
+        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 0.8f },
+    },
+    {
+        .pos      = { .x = 10.0f, .y = 10.0f, .z = 0.9f },
+        .centroid = { .x = 0.0f, .y = (1.0f / 3.0f), .z = 0.9f },
+    },
+    {
+        .pos      = { .x = 0.0f, .y = -10.0f,  .z = 0.9f },
+        .centroid = { .x = 0.0f, .y = (1.0f / 3.0f), .z = 0.9f },
+    },
+    {
+        .pos      = { .x = -10.0f, .y = 10.0f, .z = 0.9f },
+        .centroid = { .x = 0.0f, .y = (1.0f / 3.0f), .z = 0.9f },
+    },
+};
+
+struct Triangles triangles = {
+    .length = 3,
+    .vertices = vertices,
+};
+
 /* Private Structures */
 struct GfxPhysicalDevice {
     VkPhysicalDevice gpu;
-    uint32_t graphics_family_index; 
+    uint32_t graphics_family_index;
     VkQueueFamilyProperties graphics_family_properties;
 };
 
@@ -108,7 +153,7 @@ static void
 init_descriptor_pool(
     VkDevice const device,
     uint32_t const swapchain_length,
-    VkDescriptorPool *descriptor_pool); 
+    VkDescriptorPool *descriptor_pool);
 
 static void
 init_descriptor_layout(VkDevice const device, VkDescriptorSetLayout *descriptor_layout);
@@ -123,7 +168,7 @@ static void
 init_render_pass(
     VkPhysicalDevice const physical_device,
     VkDevice const device,
-    VkFormat const format, 
+    VkFormat const format,
     VkRenderPass *render_pass);
 
 static uint32_t
@@ -136,6 +181,7 @@ static void
 init_uniform_resources(
     VkDevice const device,
     VkPhysicalDevice const physical_device,
+    VkDeviceSize const size,
     uint32_t const length,
     struct GfxResource resources[static const length]);
 
@@ -189,7 +235,7 @@ init_command_buffers(
     uint32_t const length,
     VkCommandBuffer command_buffers[static const length]);
 
-static void 
+static void
 record_command_buffers(
     uint32_t const length,
     VkCommandBuffer const command_buffers[static const length],
@@ -201,7 +247,7 @@ record_command_buffers(
     VkBuffer const vertex_buffer,
     VkExtent2D const extent);
 
-static void 
+static void
 update_uniform_buffers(
     VkDevice const device,
     VkDeviceMemory const memory,
@@ -617,10 +663,10 @@ static void
 init_render_pass(
     VkPhysicalDevice const physical_device,
     VkDevice const device,
-    VkFormat const format, 
+    VkFormat const format,
     VkRenderPass *render_pass)
 {
-    VkFormat depth_formats[3] = {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+    VkFormat depth_formats[3] = {VK_FORMAT_D16_UNORM};
     VkFormat depth_format = VK_FORMAT_UNDEFINED;
     for (size_t i = 0; i < 3; i++) {
         VkFormatProperties props;
@@ -631,7 +677,7 @@ init_render_pass(
             break;
         }
     }
-    assert(depth_format != VK_FORMAT_UNDEFINED); 
+    assert(depth_format != VK_FORMAT_UNDEFINED);
 
     VkAttachmentDescription attachment_descriptions[] = {
         {
@@ -677,14 +723,25 @@ init_render_pass(
         },
     };
 
-    VkSubpassDependency dependency = {
-        .srcSubpass = VK_SUBPASS_EXTERNAL,
-        .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        .srcAccessMask = 0,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .dependencyFlags = 0,
+    VkSubpassDependency dependencies[] = {
+        {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags = 0,
+        },
+        {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags = 0,
+        },
     };
 
     VkRenderPassCreateInfo create_info =  {
@@ -693,8 +750,8 @@ init_render_pass(
         .pAttachments = attachment_descriptions,
         .subpassCount = sizeof subpasses / sizeof *subpasses,
         .pSubpasses = subpasses,
-        .dependencyCount = 1,
-        .pDependencies = &dependency,
+        .dependencyCount = sizeof dependencies / sizeof *dependencies,
+        .pDependencies = dependencies,
     };
 
     result = vkCreateRenderPass(device, &create_info, 0, render_pass);
@@ -708,7 +765,7 @@ get_memory_type(
     VkMemoryPropertyFlags const flags)
 {
     VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties); 
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 
     for (size_t i = 0; i < memory_properties.memoryTypeCount; i++)
     {
@@ -727,13 +784,14 @@ static void
 init_uniform_resources(
     VkDevice const device,
     VkPhysicalDevice const physical_device,
+    VkDeviceSize const size,
     uint32_t const length,
     struct GfxResource resources[static const length])
 {
     for (size_t i = 0; i < length; i++) {
         VkBufferCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size = sizeof (struct UBO),
+            .size = size,
             .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         };
@@ -748,7 +806,7 @@ init_uniform_resources(
             .allocationSize = memory_requirements.size,
             .memoryTypeIndex = get_memory_type(
                 physical_device,
-                memory_requirements.memoryTypeBits, 
+                memory_requirements.memoryTypeBits,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
             ),
         };
@@ -820,10 +878,10 @@ init_pipeline(
     VkPipeline *pipeline)
 {
     // TODO change cwd() to install path
-    uint32_t vert_shader_code_size = 0; 
+    uint32_t vert_shader_code_size = 0;
     uint32_t *vert_shader_code = 0;
     io_read_spirv("./build/vert.spv", &vert_shader_code_size, &vert_shader_code);
-    uint32_t frag_shader_code_size = 0; 
+    uint32_t frag_shader_code_size = 0;
     uint32_t *frag_shader_code = 0;
     io_read_spirv("./build/frag.spv", &frag_shader_code_size, &frag_shader_code);
     VkShaderModule vert_shader_module;
@@ -860,12 +918,12 @@ init_pipeline(
             .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct Vertex, pos),
          },
-         // {
-         //     .binding = 0,
-         //     .location = 1,
-         //     .format = VK_FORMAT_R32G32B32_SFLOAT,
-         //     .offset = offsetof(struct Vertex, centroid),
-         // }
+         {
+             .binding = 0,
+             .location = 1,
+             .format = VK_FORMAT_R32G32B32_SFLOAT,
+             .offset = offsetof(struct Vertex, centroid),
+         }
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
@@ -892,7 +950,7 @@ init_pipeline(
             .maxDepth = 1.0,
         },
     };
-    
+
     VkRect2D scissors[] = {
         {
             .offset.x = 0.0,
@@ -941,7 +999,7 @@ init_pipeline(
         .depthBoundsTestEnable = VK_FALSE,
         .stencilTestEnable = VK_FALSE,
     };
-    
+
     VkPipelineColorBlendAttachmentState color_blend_attachments[] = {
          {
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -1035,7 +1093,7 @@ init_framebuffers(
         .height = extent.height,
         .layers = 1,
     };
-    
+
     for (size_t i = 0; i < image_view_length; i++)
     {
         VkImageView attachments[2] = {
@@ -1068,7 +1126,7 @@ init_command_buffers(
     assert(result == VK_SUCCESS);
 }
 
-static void 
+static void
 record_command_buffers(
     uint32_t const length,
     VkCommandBuffer const command_buffers[static const length],
@@ -1083,7 +1141,7 @@ record_command_buffers(
     VkCommandBufferBeginInfo begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
-    
+
     VkClearValue clear_color[2] = {
         {
             .color = {
@@ -1118,16 +1176,16 @@ record_command_buffers(
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, offsets);
         vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);
-        vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
+        vkCmdDraw(command_buffers[i], triangles.length * 3, 1, 0, 0);
         vkCmdEndRenderPass(command_buffers[i]);
 
         result = vkEndCommandBuffer(command_buffers[i]);
         assert(result == VK_SUCCESS);
-    }   
+    }
 }
 
 static void
-reinit_swapchain(void) 
+reinit_swapchain(void)
 {
     vkDeviceWaitIdle(device);
 
@@ -1148,7 +1206,7 @@ reinit_swapchain(void)
 static void
 init_with_extent(void)
 {
-    VkFormat depth_formats[3] = {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+    VkFormat depth_formats[3] = {VK_FORMAT_D16_UNORM};
     VkFormat depth_format = VK_FORMAT_UNDEFINED;
     for (size_t i = 0; i < 3; i++)
     {
@@ -1161,7 +1219,7 @@ init_with_extent(void)
             break;
         }
     }
-    assert(depth_format != VK_FORMAT_UNDEFINED); 
+    assert(depth_format != VK_FORMAT_UNDEFINED);
 
     VkImageCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1334,12 +1392,6 @@ init(void)
     init_pipeline_layout(device, descriptor_layout, &pipeline_layout);
     init_render_pass(physical_device.gpu, device, surface_format.format, &render_pass);
 
-    struct Vertex vertices[] = {
-        { .pos = { .x = -1.0f, .y = -1.0f, .z = 1.0f } },
-        { .pos = { .x = 0.0f, .y = 1.0f, .z = 1.0f } },
-        { .pos = { .x = 1.0f, .y = -1.0f, .z = 1.0f } },
-    };
-
     VkBufferCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sizeof vertices,
@@ -1420,8 +1472,9 @@ init(void)
     // vkUnmapMemory(engine.device, engine.vertex_memory);
 
     uniform_resources = malloc(swapchain_length * sizeof *uniform_resources);
-    init_uniform_resources(device, physical_device.gpu, swapchain_length, uniform_resources);
+    init_uniform_resources(device, physical_device.gpu, sizeof(struct UBO), swapchain_length, uniform_resources);
     descriptor_sets = malloc(swapchain_length * sizeof *descriptor_sets);
+
     init_descriptor_sets(
         device,
         descriptor_layout,
@@ -1502,7 +1555,7 @@ draw_frame(struct UBO *ubo)
     VkPipelineStageFlags wait_stages[] = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
     };
-    
+
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 1,

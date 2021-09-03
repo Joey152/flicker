@@ -13,13 +13,13 @@
 #endif
 
 static struct UBO ubo;
-static float camera_pos[3] = {0.0f, 0.0f, 0.0f};
+static float camera_pos[3] = {0.0f, 9.5f, 0.0f};
 static float camera_dir[3] = {0.0f, 0.0f, 1.0f};
 static float mouse_yaw = 0.0f;
 static float mouse_pitch = 0.0f;
 static double xmouse_prev = 0.0f;
 static double ymouse_prev = 0.0f;
-static struct ControlEvents control_events;
+static struct PlayerControlEvent control_event;
 
 int
 main(void)
@@ -31,14 +31,17 @@ main(void)
     mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
     mat4_perspective(ubo.proj, 16.0f/9.0f, 90.0f * M_PI / 180.0f, 0.01f, 1000.0f);
 
-    struct timespec timestamp = {};
     platform.init_timestamp();
     while (platform.is_application_running())
     {
-        graphics.draw_frame(&ubo);
         platform.poll_events();
-        platform.get_keyboard_events(&control_events);
-        long delta = platform.get_delta_time();
+        platform.get_keyboard_events(&control_event);
+        vec3_add(camera_pos, control_event.forward_time * 0.000000001f, control_event.strafe_time * 0.000000001f, 0.0f);
+        if (control_event.forward_time < 0) {
+            printf("for:%ld str:%ld cam:%f \n", control_event.forward_time, control_event.strafe_time, camera_pos[0]);
+        }
+        mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
+        graphics.draw_frame(&ubo);
         //printf("time:%f\n", delta / 1000000000.0);
         //printf("W:%u A:%u S:%u D:%u\n", control_events.player_forward, control_events.player_back, control_events.player_strafe_left, control_events.player_strafe_right);
     }

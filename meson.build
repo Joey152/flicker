@@ -59,7 +59,7 @@ platform_lib = static_library('platform',
     c_args: [vulkan_defines, platform_links]
 )
 
-graphics_lib = static_library('graphics', 
+graphics_lib = static_library('graphics',
     [
         'src/graphics/graphics.c',
         'src/graphics/io.c',
@@ -74,5 +74,6 @@ executable('flicker', 'src/game/main.c',
     dependencies: [],
     link_with: [graphics_lib, platform_lib, linmath_lib],
     include_directories: inc,
+    c_args: ['-g'],
 )
 

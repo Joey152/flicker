@@ -1,6 +1,6 @@
 #pragma once
 
-void vec3_add(float v[static 3], float a[static 3]);
+void vec3_add(float v[static 3], float x, float y, float z);
 float vec3_length(float a[static 3]);
 void vec3_normalize(float v[static 3]);
 void vec3_cross(float v[static 3], float a[static 3], float b[static 3]);

@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <time.h>
 
-enum ControlState 
+enum ControlState
 {
     CTRL_KEY_STATE_UP,
     CTRL_KEY_STATE_DOWN,
@@ -21,25 +21,22 @@ enum ControlAction
     CTRL_ACTION_MAX,
 };
 
-struct ControlEvents
+struct PlayerControlEvent
 {
-    uint64_t player_forward;
-    uint64_t player_back;
-    uint64_t player_strafe_left;
-    uint64_t player_strafe_right;
+    long forward_time;
+    long strafe_time;
 };
 
-struct Platform 
+struct Platform
 {
     void (*create_window)(void);
-    int (*is_window_terminated)(void);
     int (*is_application_open)(void);
     int (*is_application_running)(void);
     void (*poll_events)(void);
     VkResult (*create_surface)(VkInstance instance, VkSurfaceKHR *surface);
     void (*get_window_size)(int *width, int *height);
-    void (*get_keyboard_events)(struct ControlEvents *event);
-    void (*get_timestamp)(struct timespec *time);
+    void (*get_keyboard_events)(struct PlayerControlEvent *event);
+    void (*get_timestamp)(long *time);
     long (*get_delta_time)(void);
     void (*init_timestamp)(void);
 };
