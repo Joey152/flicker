@@ -1593,4 +1593,3 @@ const struct graphics graphics = {
     .deinit = deinit,
     .draw_frame = draw_frame,
 };
-

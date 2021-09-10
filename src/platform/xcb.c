@@ -23,6 +23,8 @@ PLAYER_ACTIONS_MOVEMENT
 int is_app_running = 1;
 xcb_connection_t *connection;
 xcb_window_t window;
+int window_height = 1000;
+int window_width = 1000;
 xcb_screen_t *screen;
 xcb_generic_event_t *current_event;
 xcb_intern_atom_cookie_t wm_protocols_cookie;
@@ -41,6 +43,10 @@ long player_control_strafe_right_end;
 long player_control_strafe_left_begin;
 long player_control_strafe_left_end;
 long prev_time;
+int16_t prev_mouse_x;
+int16_t prev_mouse_y;
+int16_t total_mouse_x;
+int16_t total_mouse_y;
 
 uint8_t player_actions_movement_mapping[] = {
     0x19,
@@ -60,7 +66,7 @@ time_diff_in_ns(struct timespec t1, struct timespec t2)
     if (ns < 0)
     {
         diff.tv_sec  = t2.tv_sec - t1.tv_sec - 1;
-        diff.tv_nsec = ns + 1000000000;
+        diff.tv_nsec = ns + 1000000000.0;
     }
     else
     {
@@ -80,13 +86,12 @@ create_window(void)
     screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
     window = xcb_generate_id(connection);
 
-    int windowHeight = 1000;
-    int windowWidth = 1000;
     uint32_t value_mask = XCB_CW_EVENT_MASK;
     uint32_t value_list[] = {
         XCB_EVENT_MASK_EXPOSURE |
         XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
-        XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE
+        XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
+        XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_BUTTON_MOTION
     };
 
     xcb_create_window(
@@ -96,8 +101,8 @@ create_window(void)
         screen->root,
         0,
         0,
-        windowWidth,
-        windowHeight,
+        window_width,
+        window_height,
         0,
         XCB_WINDOW_CLASS_INPUT_OUTPUT,
         screen->root_visual,
@@ -112,7 +117,20 @@ create_window(void)
     xcb_change_property(connection, XCB_PROP_MODE_REPLACE, window, wm_protocols->atom, 4, 32, 1, &wm_delete_window->atom);
 
     xcb_map_window(connection, window);
+
     xcb_flush(connection);
+
+    xcb_grab_pointer(
+        connection,
+        1,
+        window,
+        XCB_EVENT_MASK_POINTER_MOTION,
+        XCB_GRAB_MODE_ASYNC,
+        XCB_GRAB_MODE_ASYNC,
+        window,
+        XCB_NONE,
+        XCB_CURRENT_TIME
+    );
 }
 
 static int
@@ -230,8 +248,58 @@ poll_events(void)
                 xcb_button_press_event_t *event = (xcb_button_press_event_t *)events[i];
                 break;
             }
+            case XCB_MOTION_NOTIFY:
+            {
+                xcb_motion_notify_event_t *event = (xcb_motion_notify_event_t *)events[i];
+                int16_t x = event->event_x;
+                int16_t y = event->event_y;
+                int16_t new_x = x;
+                int16_t new_y = y;
+                if (x == window_width - 1)
+                {
+                    new_x = 1;
+                    prev_mouse_x -= window_width - 1;
+                }
+                else if (x == 0)
+                {
+                    new_x = window_width - 2;
+                    prev_mouse_x += window_width - 1;
+                }
+
+                if (y == window_height - 1)
+                {
+                    new_y = 1;
+                    prev_mouse_y -= window_height - 1;
+                }
+                else if (y == 0)
+                {
+                    new_y = window_height - 2;
+                    prev_mouse_y += window_height - 1;
+                }
+
+                if (new_x != x || new_y != y)
+                {
+                    // TODO: there is still an artifact from warping
+                    xcb_warp_pointer(connection, XCB_NONE, window, 0, 0, 0, 0, new_x, new_y);
+                    xcb_flush(connection);
+                }
+
+                total_mouse_x += x - prev_mouse_x;
+                total_mouse_y += y - prev_mouse_y;
+                player_control_event.mouse_x = total_mouse_x;
+                player_control_event.mouse_y = total_mouse_y;
+                prev_mouse_x = x;
+                prev_mouse_y = y;
+
+                break;
+            }
+            case XCB_EXPOSE:
+            {
+                platform.get_window_size(&window_width, &window_height);
+            }
             default:
             {
+                printf("%d\n", events[i]->response_type & ~0x80);
                 break;
             }
         }
@@ -269,24 +337,27 @@ get_keyboard_events(struct PlayerControlEvent *event)
 {
     long cutoff;
     get_timestamp(&cutoff);
-    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_FORWARD]) {
+    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_FORWARD])
+    {
         player_control_event.forward_time += cutoff - player_control_forward_begin;
-        if (player_control_event.forward_time < 0) {
-            printf("cut:%ld begin:%ld \n", cutoff, player_control_forward_begin);
-        }
     }
-    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_BACKWARD]) {
+    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_BACKWARD])
+    {
         player_control_event.forward_time -= cutoff - player_control_backward_begin;
     }
-    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_STRAFE_RIGHT]) {
+    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_STRAFE_RIGHT])
+    {
         player_control_event.strafe_time += cutoff - player_control_strafe_right_begin;
     }
-    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_STRAFE_LEFT]) {
+    if (player_control_end_state[PLAYER_ACTIONS_MOVEMENT_STRAFE_LEFT])
+    {
         player_control_event.strafe_time -= cutoff - player_control_strafe_left_begin;
     }
 
     event->forward_time = player_control_event.forward_time;
     event->strafe_time = player_control_event.strafe_time;
+    event->mouse_x = player_control_event.mouse_x;
+    event->mouse_y = player_control_event.mouse_y;
 
     player_control_forward_begin = cutoff;
     player_control_backward_begin = cutoff;
@@ -306,7 +377,8 @@ get_timestamp(long *time)
     struct timespec temp;
     clock_gettime(CLOCK_MONOTONIC_RAW, &temp);
 
-    *time = temp.tv_sec * 1000000 + temp.tv_nsec;
+    // TODO: what happens on overflow
+    *time = temp.tv_sec * 1000000000.0 + temp.tv_nsec;
 }
 
 static void
@@ -319,6 +391,13 @@ init_timestamp(void)
     player_control_backward_begin = time;
     player_control_strafe_right_begin = time;
     player_control_strafe_left_begin = time;
+
+    // TODO: move to another funciton or generalize the init name
+    xcb_query_pointer_cookie_t cookie = xcb_query_pointer(connection, window);
+    xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(connection, cookie, 0);
+
+    prev_mouse_x = reply->win_x;
+    prev_mouse_y = reply->win_y;
 }
 
 const struct Platform platform = {

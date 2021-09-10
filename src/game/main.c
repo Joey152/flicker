@@ -36,18 +36,14 @@ main(void)
     {
         platform.poll_events();
         platform.get_keyboard_events(&control_event);
-        vec3_add(camera_pos, control_event.forward_time * 0.000000001f, control_event.strafe_time * 0.000000001f, 0.0f);
-        if (control_event.forward_time < 0) {
-            printf("for:%ld str:%ld cam:%f \n", control_event.forward_time, control_event.strafe_time, camera_pos[0]);
-        }
+        vec3_add(camera_pos, control_event.forward_time * 0.000001f, control_event.strafe_time * 0.000001f, 0.0f);
+        mouse_pitch = control_event.mouse_y / 100.0;
+        mouse_yaw = control_event.mouse_x / 100.0;
         mat4_view(ubo.view, camera_pos, mouse_pitch, mouse_yaw);
         graphics.draw_frame(&ubo);
-        //printf("time:%f\n", delta / 1000000000.0);
-        //printf("W:%u A:%u S:%u D:%u\n", control_events.player_forward, control_events.player_back, control_events.player_strafe_left, control_events.player_strafe_right);
     }
 
     graphics.deinit();
 
     return EXIT_SUCCESS;
 }
-

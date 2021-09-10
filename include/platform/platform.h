@@ -25,6 +25,8 @@ struct PlayerControlEvent
 {
     long forward_time;
     long strafe_time;
+    long mouse_x;
+    long mouse_y;
 };
 
 struct Platform
@@ -42,5 +44,3 @@ struct Platform
 };
 
 extern const struct Platform platform;
-
-
