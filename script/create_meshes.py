@@ -12,8 +12,9 @@ for file_name in sys.argv[1:]:
         header = stl.read(80)
         num_triangles_b = stl.read(4)
         num_triangles = int.from_bytes(num_triangles_b, byteorder='little')
+        num_vertices_b = struct.pack('I', num_triangles * 3)
 
-        vertex.write(num_triangles_b)
+        vertex.write(num_vertices_b)
 
         for t in range(num_triangles):
             normal_vector = struct.unpack('fff', stl.read(12))
@@ -40,4 +41,3 @@ for file_name in sys.argv[1:]:
 
             num_attr = int.from_bytes(stl.read(2), byteorder='little')
             stl.read(num_attr)
-

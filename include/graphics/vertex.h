@@ -21,5 +21,4 @@ struct VertexCentroid {
 struct Vertex {
     struct VertexPos pos;
     struct VertexCentroid centroid;
-};
-
+} __attribute__((__packed__));

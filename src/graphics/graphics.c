@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "graphics/graphics.h"
 #include "graphics/io.h"
@@ -12,50 +13,6 @@
 #include "platform/platform.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
-
-struct Vertex vertices[] = {
-    {
-        .pos      = { .x = 10.0f, .y = -10.0f, .z = 1.0f },
-        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 1.0f },
-    },
-    {
-        .pos      = { .x = -10.0f, .y = 10.0f,  .z = 1.0f },
-        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 1.0f },
-    },
-    {
-        .pos      = { .x = 0.0f, .y = -10.0f, .z = 1.0f },
-        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 1.0f },
-    },
-    {
-        .pos      = { .x = -10.0f, .y = -10.0f, .z = 0.8f },
-        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 0.8f },
-    },
-    {
-        .pos      = { .x = 0.0f, .y = 10.0f,  .z = 0.8f },
-        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 0.8f },
-    },
-    {
-        .pos      = { .x = 10.0f, .y = -10.0f, .z = 0.8f },
-        .centroid = { .x = 0.0f, .y = (-1.0f / 3.0f), .z = 0.8f },
-    },
-    {
-        .pos      = { .x = 10.0f, .y = 10.0f, .z = 0.9f },
-        .centroid = { .x = 0.0f, .y = (1.0f / 3.0f), .z = 0.9f },
-    },
-    {
-        .pos      = { .x = 0.0f, .y = -10.0f,  .z = 0.9f },
-        .centroid = { .x = 0.0f, .y = (1.0f / 3.0f), .z = 0.9f },
-    },
-    {
-        .pos      = { .x = -10.0f, .y = 10.0f, .z = 0.9f },
-        .centroid = { .x = 0.0f, .y = (1.0f / 3.0f), .z = 0.9f },
-    },
-};
-
-struct Triangles triangles = {
-    .length = 3,
-    .vertices = vertices,
-};
 
 /* Private Structures */
 struct GfxPhysicalDevice {
@@ -244,6 +201,7 @@ record_command_buffers(
     VkRenderPass const render_pass,
     VkPipeline const pipeline,
     VkPipelineLayout const pipeline_layout,
+    uint32_t const vertex_count,
     VkBuffer const vertex_buffer,
     VkExtent2D const extent);
 
@@ -923,7 +881,7 @@ init_pipeline(
              .location = 1,
              .format = VK_FORMAT_R32G32B32_SFLOAT,
              .offset = offsetof(struct Vertex, centroid),
-         }
+         },
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
@@ -1135,6 +1093,7 @@ record_command_buffers(
     VkRenderPass const render_pass,
     VkPipeline const pipeline,
     VkPipelineLayout const pipeline_layout,
+    uint32_t const vertex_count,
     VkBuffer const vertex_buffer,
     VkExtent2D const extent)
 {
@@ -1176,7 +1135,7 @@ record_command_buffers(
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &vertex_buffer, offsets);
         vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, 0);
-        vkCmdDraw(command_buffers[i], triangles.length * 3, 1, 0, 0);
+        vkCmdDraw(command_buffers[i], vertex_count, 1, 0, 0);
         vkCmdEndRenderPass(command_buffers[i]);
 
         result = vkEndCommandBuffer(command_buffers[i]);
@@ -1288,17 +1247,6 @@ init_with_extent(void)
     );
     command_buffers = malloc(swapchain_length * sizeof *command_buffers);
     init_command_buffers(device, graphics_command_pool, swapchain_length, command_buffers);
-    record_command_buffers(
-        swapchain_length,
-        command_buffers,
-        framebuffers,
-        descriptor_sets,
-        render_pass,
-        pipeline,
-        pipeline_layout,
-        vertex_buffer,
-        extent
-    );
 }
 
 static void
@@ -1330,7 +1278,7 @@ update_uniform_buffers(
 
 
 /* Public Functions */
-void
+static void
 init(void)
 {
     result = volkInitialize();
@@ -1392,34 +1340,7 @@ init(void)
     init_pipeline_layout(device, descriptor_layout, &pipeline_layout);
     init_render_pass(physical_device.gpu, device, surface_format.format, &render_pass);
 
-    VkBufferCreateInfo create_info = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof vertices,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    result = vkCreateBuffer(device, &create_info, 0, &vertex_buffer);
-    assert(result == VK_SUCCESS);
 
-    VkMemoryRequirements memory_requirements;
-    vkGetBufferMemoryRequirements(device, vertex_buffer, &memory_requirements);
-    VkMemoryAllocateInfo alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = memory_requirements.size,
-        .memoryTypeIndex = get_memory_type(
-            physical_device.gpu,
-            memory_requirements.memoryTypeBits,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-        ),
-    };
-    result = vkAllocateMemory(device, &alloc_info, 0, &vertex_memory);
-    assert(result == VK_SUCCESS);
-
-    void *data;
-    vkBindBufferMemory(device, vertex_buffer, vertex_memory, 0);
-    vkMapMemory(device, vertex_memory, 0, sizeof vertices, 0, &data);
-    memcpy(data, &vertices, sizeof vertices);
-    vkUnmapMemory(device, vertex_memory);
 
     // engine.vertex_buffers_length = number_of_objs;
     // engine.total_vertex_size = 0;
@@ -1487,7 +1408,7 @@ init(void)
     init_with_extent();
 }
 
-void
+static void
 deinit(void)
 {
     vkDeviceWaitIdle(device);
@@ -1526,7 +1447,7 @@ deinit(void)
     vkDestroyInstance(instance, 0);
 }
 
-void
+static void
 draw_frame(struct UBO *ubo)
 {
     static uint32_t current_frame = 0;
@@ -1587,9 +1508,59 @@ draw_frame(struct UBO *ubo)
     current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
+static void
+load_map(uint32_t const count, struct Vertex vertices[static const count])
+{
+    VkDeviceSize size = count * sizeof *vertices;
+    printf("size: %ld\n", size);
+
+    VkBufferCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    result = vkCreateBuffer(device, &create_info, 0, &vertex_buffer);
+    assert(result == VK_SUCCESS);
+
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(device, vertex_buffer, &memory_requirements);
+    VkMemoryAllocateInfo alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memory_requirements.size,
+        .memoryTypeIndex = get_memory_type(
+            physical_device.gpu,
+            memory_requirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        ),
+    };
+    result = vkAllocateMemory(device, &alloc_info, 0, &vertex_memory);
+    assert(result == VK_SUCCESS);
+
+    void *data;
+    vkBindBufferMemory(device, vertex_buffer, vertex_memory, 0);
+    vkMapMemory(device, vertex_memory, 0, size, 0, &data);
+    memcpy(data, vertices, size);
+    vkUnmapMemory(device, vertex_memory);
+
+    record_command_buffers(
+        swapchain_length,
+        command_buffers,
+        framebuffers,
+        descriptor_sets,
+        render_pass,
+        pipeline,
+        pipeline_layout,
+        count,
+        vertex_buffer,
+        extent
+    );
+}
+
 /* Export Graphics Library */
 const struct graphics graphics = {
     .init = init,
     .deinit = deinit,
     .draw_frame = draw_frame,
+    .load_map = load_map,
 };

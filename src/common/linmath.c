@@ -57,7 +57,8 @@ void mat4_mul(float m[static 4][4], float a[static 4][4], float b[static 4][4]) 
     memcpy(m, temp, 4 * 4 * sizeof **temp);
 }
 
-void mat4_view(float m[static 4][4], float pos[static 3], float pitch, float yaw) {
+void
+mat4_view(float m[static 4][4], float pos[static 3], float pitch, float yaw) {
     float cos_yaw = cosf(yaw);
     float sin_yaw = sinf(yaw);
     float cos_pitch = cosf(pitch);
@@ -128,4 +129,3 @@ void mat4_perspective(float m[static 4][4], float aspect, float fovy, float n, f
 
     mat4_mul(m, p, c);
 }
-

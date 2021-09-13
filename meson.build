@@ -19,6 +19,20 @@ custom_target('main shaders',
     command: [glslangValidator, '--target-env', 'vulkan1.0',  '@INPUT@']
 )
 
+python = find_program('python')
+create_meshes_script = files('script/create_meshes.py')
+custom_target('convert meshes',
+    install: true,
+    install_dir: 'asset/mesh',
+    input: files(
+        'asset/mesh/cube.stl',
+        'asset/mesh/map1.stl',
+        'asset/mesh/monkey.stl',
+    ),
+    output: ['testoutput'],
+    command: [python, create_meshes_script, '@INPUT@']
+)
+
 inc = include_directories('include')
 
 linmath_lib = static_library(
@@ -70,10 +84,13 @@ graphics_lib = static_library('graphics',
     c_args: vulkan_defines
 )
 
-executable('flicker', 'src/game/main.c',
+executable('flicker',
+    [
+        'src/game/io.c',
+        'src/game/main.c',
+    ],
     dependencies: [],
     link_with: [graphics_lib, platform_lib, linmath_lib],
     include_directories: inc,
     c_args: ['-g'],
 )
-
