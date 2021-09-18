@@ -1,5 +1,6 @@
 #include "common/linmath.h"
 
+#include <assert.h>
 #include <malloc.h>
 #include <math.h>
 #include <stddef.h>
@@ -41,10 +42,14 @@ float vec3_dot(float a[static 3], float b[static 3]) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
-void mat4_mul(float m[static 4][4], float a[static 4][4], float b[static 4][4]) {
-    //float **temp = calloc(4 * 4, sizeof **temp);
+// Multiply 2 matrixes together
+// assertions
+//   m is already zeroed
+//   length of m == 4*4
+//   length of a == 4*4
+//   length of b == 4*4
+void mat4_mul(float m[4][4], float a[4][4], float b[4][4]) {
     float temp[4][4];
-
     for (size_t row = 0; row < 4; row++) {
         for (size_t col = 0; col < 4; col++) {
             temp[row][col] = 0.0f;
@@ -54,16 +59,12 @@ void mat4_mul(float m[static 4][4], float a[static 4][4], float b[static 4][4]) 
         }
     }
 
-    memcpy(m, temp, 4 * 4 * sizeof **temp);
+    memcpy(m, temp, sizeof temp);
 }
 
 void
-mat4_view(float m[static 4][4], float pos[static 3], float pitch, float yaw) {
-    float cos_yaw = cosf(yaw);
-    float sin_yaw = sinf(yaw);
-    float cos_pitch = cosf(pitch);
-    float sin_pitch = sinf(pitch);
-
+mat4_view(float m[static 4][4], float pos[static 3], float cos_yaw, float sin_yaw, float cos_pitch, float sin_pitch)
+{
     float xaxis[3] = {cos_yaw, 0.0f, -sin_yaw};
     float yaxis[3] = {sin_yaw * sin_pitch, cos_pitch, cos_yaw * sin_pitch};
     float zaxis[3] = {sin_yaw * cos_pitch, -sin_pitch, cos_yaw * cos_pitch};
